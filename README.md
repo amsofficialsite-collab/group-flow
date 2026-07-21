@@ -1,19 +1,14 @@
-# GROUP FLOW V0.1
+# GROUP FLOW V1 Clean
 
-Starter project for managing Facebook Group content and posting queues.
+Clean Next.js foundation prepared for Vercel.
 
-## Run locally
+## Deploy
 
-1. Install Node.js LTS
-2. Run `npm install`
-3. Copy `.env.example` to `.env.local`
-4. Add Supabase Project URL and Publishable Key
-5. Run `npm run dev`
+1. Delete the old repository files.
+2. Upload all files from this ZIP to the repository root.
+3. Confirm `package.json` is at the repository root.
+4. In Vercel, use Framework Preset `Next.js` and Node.js `24.x`.
+5. Leave Root Directory and Output Directory blank.
+6. Deploy from the newest commit without cache.
 
-## Deploy to Vercel
-
-Upload all project files to the GitHub repository, then import the repository in Vercel. Add the two environment variables before deploying.
-
-## Supabase
-
-Open Supabase SQL Editor and run `supabase/schema.sql`.
+This version intentionally has no Supabase dependency yet, so deployment does not require environment variables.

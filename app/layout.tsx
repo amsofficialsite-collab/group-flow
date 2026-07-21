@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "GROUP FLOW",
-  description: "Facebook Group content and posting management",
+  description: "Facebook Group Content & Posting Management",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
