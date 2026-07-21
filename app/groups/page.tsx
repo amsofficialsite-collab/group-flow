@@ -1,2 +1,10 @@
-import EmptyPage from "@/components/EmptyPage";
-export default function Page(){ return <EmptyPage title="Groups" text="จัดเก็บรายชื่อและลิงก์ Facebook Group"/>; }
+import AppShell from "@/components/AppShell";
+import GroupManager from "@/components/groups/GroupManager";
+
+export default function GroupsPage() {
+  return (
+    <AppShell title="Facebook Groups">
+      <GroupManager />
+    </AppShell>
+  );
+}

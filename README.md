@@ -1,25 +1,22 @@
-# GROUP FLOW V1.4 — Supabase Auth
+# GROUP FLOW V2.0 — Group Manager
 
-## 1) Supabase database
-Open **Supabase → SQL Editor → New query**, paste `supabase/schema.sql`, then click **Run**.
+เวอร์ชันนี้เพิ่มหน้าจัดการ Facebook Group ที่เชื่อมกับ Supabase แล้ว
 
-## 2) Create the first user
-Open **Authentication → Users → Add user**. Create an email/password account and enable **Auto Confirm User**.
+## ฟีเจอร์
+- เพิ่ม แก้ไข และลบกลุ่ม
+- เปิดลิงก์ Facebook Group
+- ค้นหาและกรองสถานะ
+- เปิด/พักใช้งานกลุ่ม
+- เก็บหมวดหมู่ จังหวัด จำนวนสมาชิก และหมายเหตุ
+- ข้อมูลของผู้ใช้แต่ละคนแยกกันด้วย RLS
 
-## 3) Vercel environment variables
-Open **Vercel → Project → Settings → Environment Variables** and add:
+## การติดตั้ง
+1. อัปโหลดไฟล์ทั้งหมดทับ Repository เดิม
+2. Environment Variables ใน Vercel ต้องมี:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+3. รอ Vercel Deploy จาก Commit ใหม่
+4. ล็อกอินแล้วเปิดเมนู **Groups**
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-
-Use the Project URL ending in `.supabase.co`, not the dashboard URL. Apply to Production, Preview, and Development, then redeploy.
-
-## 4) Local development
-Copy `.env.example` to `.env.local`, fill in the two values, then run:
-
-```bash
-npm ci
-npm run dev
-```
-
-Open `/login` and sign in with the user created in Supabase.
+## Database
+ต้องมีตาราง `groups` และ `group_categories` พร้อม RLS ตาม SQL ที่รันไว้ก่อนหน้านี้

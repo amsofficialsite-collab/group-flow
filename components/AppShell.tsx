@@ -31,7 +31,7 @@ export default function AppShell({ title, children }: { title: string; children:
         </nav>
       </aside>
       <main>
-        <header className="flex items-center justify-between border-b border-white/10 px-6 py-5 md:px-8"><div><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">GROUP FLOW</p><h1 className="text-2xl font-bold">{title}</h1></div><div className="flex items-center gap-2"><div className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-white/60">V1.4</div><LogoutButton /></div></header>
+        <header className="flex items-center justify-between border-b border-white/10 px-6 py-5 md:px-8"><div><p className="text-xs uppercase tracking-[0.2em] text-cyan-300">GROUP FLOW</p><h1 className="text-2xl font-bold">{title}</h1></div><div className="flex items-center gap-2"><div className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-white/60">V2.0</div><LogoutButton /></div></header>
         <section className="p-6 md:p-8">{children}</section>
       </main>
     </div>
