@@ -17,6 +17,7 @@ type Status = "draft" | "ready" | "archived";
 
 type ContentImage = {
   id: string;
+  user_id?: string;
   content_id: string;
   image_url: string;
   storage_path: string | null;
@@ -408,6 +409,14 @@ export default function ContentLibrary() {
         await supabase.storage.from("content-images").remove(removedPaths);
       }
 
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error("ไม่พบผู้ใช้งาน กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่");
+      }
+
       const uploaded = [];
 
       for (const image of newImages) {
@@ -418,6 +427,7 @@ export default function ContentLibrary() {
 
       const keptImages = existingImages.filter((image) => !image.removed);
       const imageRows = uploaded.map((image, index) => ({
+        user_id: user.id,
         content_id: contentId,
         image_url: image.url,
         storage_path: image.path,
@@ -461,6 +471,7 @@ export default function ContentLibrary() {
         if (legacyImages.length > 0) {
           const { error } = await supabase.from("content_images").insert(
             legacyImages.map((image, index) => ({
+              user_id: user.id,
               content_id: contentId,
               image_url: image.image_url,
               storage_path:
@@ -487,11 +498,20 @@ export default function ContentLibrary() {
       closeModal();
       await load();
     } catch (error) {
+      console.error("CONTENT SAVE ERROR:", error);
+
       if (uploadedPaths.length > 0) {
         await supabase.storage.from("content-images").remove(uploadedPaths);
       }
 
-      alert(error instanceof Error ? error.message : "บันทึกไม่สำเร็จค่ะ");
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" && error !== null && "message" in error
+            ? String((error as { message?: unknown }).message || "บันทึกไม่สำเร็จค่ะ")
+            : "บันทึกไม่สำเร็จค่ะ";
+
+      alert(message);
     } finally {
       setBusy(false);
     }
@@ -527,6 +547,15 @@ export default function ContentLibrary() {
   }
 
   async function duplicate(item: Item) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      alert("ไม่พบผู้ใช้งาน กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่");
+      return;
+    }
+
     const { data, error } = await supabase
       .from("content_items")
       .insert({
@@ -552,6 +581,7 @@ export default function ContentLibrary() {
         .from("content_images")
         .insert(
           sourceImages.map((image) => ({
+            user_id: user.id,
             content_id: data.id,
             image_url: image.image_url,
             storage_path: image.storage_path,
