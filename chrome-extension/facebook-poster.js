@@ -39,177 +39,41 @@
     document.execCommand("insertText", false, text);
     el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
   }
-async function attachImages(imageUrls) {
-  const urls = Array.isArray(imageUrls)
-    ? imageUrls.filter(Boolean)
-    : [];
 
-  if (urls.length === 0) return true;
-
-  const files = [];
-
-  for (let index = 0; index < urls.length; index += 1) {
-    const imageUrl = urls[index];
-
+  async function attachImage(imageUrl) {
+    if (!imageUrl) return true;
     const response = await fetch(imageUrl);
-
-    if (!response.ok) {
-      throw new Error(`ดาวน์โหลดรูปที่ ${index + 1} ไม่สำเร็จ`);
-    }
-
+    if (!response.ok) throw new Error("ดาวน์โหลดรูปไม่สำเร็จ");
     const blob = await response.blob();
+    const ext = blob.type.includes("png") ? "png" : blob.type.includes("webp") ? "webp" : "jpg";
+    const file = new File([blob], `group-flow-${Date.now()}.${ext}`, { type: blob.type || "image/jpeg" });
 
-    const ext = blob.type.includes("png")
-      ? "png"
-      : blob.type.includes("webp")
-        ? "webp"
-        : blob.type.includes("gif")
-          ? "gif"
-          : "jpg";
-
-    files.push(
-      new File(
-        [blob],
-        `group-flow-${Date.now()}-${index + 1}.${ext}`,
-        {
-          type: blob.type || "image/jpeg",
-        },
-      ),
-    );
-  }
-
-  let input = [...document.querySelectorAll('input[type="file"]')]
-    .find((element) => !element.disabled);
-
-  if (!input) {
-    const photoButton = [
-      ...document.querySelectorAll(
-        '[role="button"], div[tabindex="0"], button',
-      ),
-    ]
-      .filter(visible)
-      .find((element) => {
-        const text = textOf(element);
-
-        return (
-          text.includes("รูปภาพ/วิดีโอ") ||
-          text.includes("รูปภาพ") ||
-          text.includes("photo/video") ||
-          text === "photo"
-        );
+    let input = [...document.querySelectorAll('input[type="file"]')].find(visible);
+    if (!input) {
+      const photoButton = [...document.querySelectorAll('[role="button"], div[tabindex="0"]')].filter(visible).find((el) => {
+        const t = textOf(el);
+        return t.includes("รูปภาพ") || t.includes("photo/video") || t.includes("photo");
       });
-
-    if (photoButton) {
-      photoButton.click();
+      if (photoButton) photoButton.click();
+      input = await waitFor(() => [...document.querySelectorAll('input[type="file"]')].find((el) => !el.disabled), 8000);
     }
-
-    input = await waitFor(
-      () =>
-        [...document.querySelectorAll('input[type="file"]')]
-          .find((element) => !element.disabled),
-      10000,
-    );
-  }
-
-  if (!input) {
-    throw new Error("ไม่พบช่องอัปโหลดรูปของ Facebook");
-  }
-
-  const transfer = new DataTransfer();
-
-  files.forEach((file) => {
+    if (!input) throw new Error("ไม่พบช่องอัปโหลดรูปของ Facebook");
+    const transfer = new DataTransfer();
     transfer.items.add(file);
-  });
-
-  Object.defineProperty(input, "files", {
-    value: transfer.files,
-    configurable: true,
-  });
-
-  input.dispatchEvent(
-    new Event("input", {
-      bubbles: true,
-    }),
-  );
-
-  input.dispatchEvent(
-    new Event("change", {
-      bubbles: true,
-    }),
-  );
-
-  await sleep(Math.max(4000, files.length * 1800));
-
-  return true;
-}
-
- function findPostButton() {
-  const dialogs = [
-    ...document.querySelectorAll(
-      '[role="dialog"], [aria-modal="true"], div[role="dialog"]',
-    ),
-  ].filter(visible);
-
-  const searchRoots = dialogs.length > 0
-    ? dialogs.reverse()
-    : [document.body];
-
-  for (const root of searchRoots) {
-    const candidates = [
-      ...root.querySelectorAll(
-        'button, [role="button"], div[tabindex="0"]',
-      ),
-    ].filter(visible);
-
-    const exactMatch = candidates.find((element) => {
-      const text = textOf(element);
-      const ariaLabel = (
-        element.getAttribute("aria-label") || ""
-      ).trim().toLowerCase();
-
-      const disabled =
-        element.getAttribute("aria-disabled") === "true" ||
-        element.hasAttribute("disabled") ||
-        element.disabled === true;
-
-      if (disabled) return false;
-
-      return (
-        text === "โพสต์" ||
-        text === "post" ||
-        ariaLabel === "โพสต์" ||
-        ariaLabel === "post"
-      );
-    });
-
-    if (exactMatch) return exactMatch;
-
-    const partialMatch = candidates.find((element) => {
-      const text = textOf(element);
-      const ariaLabel = (
-        element.getAttribute("aria-label") || ""
-      ).trim().toLowerCase();
-
-      const disabled =
-        element.getAttribute("aria-disabled") === "true" ||
-        element.hasAttribute("disabled") ||
-        element.disabled === true;
-
-      if (disabled) return false;
-
-      const combined = `${text} ${ariaLabel}`.trim();
-
-      return (
-        combined.includes("โพสต์") ||
-        combined.includes("post")
-      );
-    });
-
-    if (partialMatch) return partialMatch;
+    Object.defineProperty(input, "files", { value: transfer.files, configurable: true });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await sleep(2500);
+    return true;
   }
 
-  return null;
-}
+  function findPostButton() {
+    const buttons = [...document.querySelectorAll('[role="button"], button')].filter(visible);
+    return buttons.find((el) => {
+      const t = textOf(el);
+      const disabled = el.getAttribute("aria-disabled") === "true" || el.disabled;
+      return !disabled && (t === "โพสต์" || t === "post");
+    });
+  }
 
   function showPanel(job) {
     const existing = document.getElementById("groupflow-agent-panel");
@@ -243,29 +107,12 @@ async function attachImages(imageUrls) {
 
       status.textContent = "กำลังใส่ข้อความ…";
       setEditableText(editor, job.caption || "");
-      const imageUrls =
-  Array.isArray(job.imageUrls) && job.imageUrls.length > 0
-    ? job.imageUrls
-    : job.imageUrl
-      ? [job.imageUrl]
-      : [];
+      if (job.imageUrl) {
+        status.textContent = "กำลังแนบรูปภาพ…";
+        await attachImage(job.imageUrl);
+      }
 
-if (imageUrls.length > 0) {
-  status.textContent = `กำลังแนบรูปภาพ 0/${imageUrls.length}…`;
-
-  await attachImages(imageUrls);
-
-  status.textContent = `แนบรูปภาพครบ ${imageUrls.length} รูปแล้ว`;
-}
-      status.textContent = "กำลังรอ Facebook เตรียมปุ่มโพสต์…";
-
-const postButton = await waitFor(findPostButton, 30000);
-
-if (!postButton) {
-  throw new Error(
-    "ไม่พบปุ่มโพสต์ กรุณาตรวจสอบว่าหน้าต่างสร้างโพสต์เปิดอยู่และรูปอัปโหลดเสร็จแล้ว",
-  );
-}
+      const postButton = await waitFor(findPostButton, 15000);
       if (!postButton) throw new Error("ไม่พบปุ่มโพสต์");
 
       if (job.autoPost) {
