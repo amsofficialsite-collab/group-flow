@@ -1,0 +1,11 @@
+GROUP FLOW Posting Agent V4
+
+1. เปิด chrome://extensions
+2. ลบ Extension GROUP FLOW ตัวเดิมออกก่อน
+3. เปิด Developer mode
+4. กด Load unpacked
+5. เลือกโฟลเดอร์ group-flow-extension-v4 ที่แตกจาก ZIP
+6. ปิดแท็บ Facebook เดิมทั้งหมด
+7. เปิด GROUP FLOW และส่งคิวใหม่
+
+ตรวจสอบว่าแผงบน Facebook แสดงคำว่า GROUP FLOW Posting Agent V4

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "GROUP FLOW Posting Agent",
-  "version": "1.0.0",
-  "description": "รับคิวจาก GROUP FLOW แล้วช่วยเตรียมโพสต์ Facebook Group พร้อมข้อความและรูปภาพ",
+  "version": "1.0.4",
+  "description": "รับคิวจาก GROUP FLOW แล้วช่วยเตรียมโพสต์ Facebook Group พร้อมข้อความและหลายรูปภาพ",
   "permissions": ["storage", "tabs", "scripting", "notifications"],
   "host_permissions": [
     "https://www.facebook.com/*",
