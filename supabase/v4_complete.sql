@@ -1,4 +1,3 @@
--- GROUP FLOW V3 FULL — run once in Supabase SQL Editor
 create extension if not exists pgcrypto;
 
 create table if not exists public.content_items (
@@ -13,6 +12,7 @@ create table if not exists public.content_items (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.content_items add column if not exists image_url text;
 
 create table if not exists public.queue_items (
   id uuid primary key default gen_random_uuid(),
@@ -61,59 +61,19 @@ create policy "posting_logs own rows" on public.posting_logs for all to authenti
 drop policy if exists "app_settings own row" on public.app_settings;
 create policy "app_settings own row" on public.app_settings for all to authenticated using (auth.uid()=user_id) with check (auth.uid()=user_id);
 
-create index if not exists queue_items_scheduled_at_idx on public.queue_items(scheduled_at);
-create index if not exists queue_items_status_idx on public.queue_items(status);
-create index if not exists posting_logs_posted_at_idx on public.posting_logs(posted_at);
-
--- Content image storage
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-  'content-images',
-  'content-images',
-  true,
-  8388608,
-  array['image/jpeg','image/png','image/webp','image/gif']
-)
-on conflict (id) do update set
-  public = excluded.public,
-  file_size_limit = excluded.file_size_limit,
-  allowed_mime_types = excluded.allowed_mime_types;
+insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
+values ('content-images','content-images',true,8388608,array['image/jpeg','image/png','image/webp','image/gif'])
+on conflict (id) do update set public=excluded.public,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
 
 drop policy if exists "content images public read" on storage.objects;
-create policy "content images public read"
-on storage.objects for select
-to public
-using (bucket_id = 'content-images');
-
+create policy "content images public read" on storage.objects for select to public using (bucket_id='content-images');
 drop policy if exists "content images authenticated upload" on storage.objects;
-create policy "content images authenticated upload"
-on storage.objects for insert
-to authenticated
-with check (
-  bucket_id = 'content-images'
-  and (storage.foldername(name))[1] = auth.uid()::text
-);
-
+create policy "content images authenticated upload" on storage.objects for insert to authenticated with check (bucket_id='content-images' and (storage.foldername(name))[1]=auth.uid()::text);
 drop policy if exists "content images owner update" on storage.objects;
-create policy "content images owner update"
-on storage.objects for update
-to authenticated
-using (
-  bucket_id = 'content-images'
-  and (storage.foldername(name))[1] = auth.uid()::text
-)
-with check (
-  bucket_id = 'content-images'
-  and (storage.foldername(name))[1] = auth.uid()::text
-);
-
+create policy "content images owner update" on storage.objects for update to authenticated using (bucket_id='content-images' and (storage.foldername(name))[1]=auth.uid()::text) with check (bucket_id='content-images' and (storage.foldername(name))[1]=auth.uid()::text);
 drop policy if exists "content images owner delete" on storage.objects;
-create policy "content images owner delete"
-on storage.objects for delete
-to authenticated
-using (
-  bucket_id = 'content-images'
-  and (storage.foldername(name))[1] = auth.uid()::text
-);
+create policy "content images owner delete" on storage.objects for delete to authenticated using (bucket_id='content-images' and (storage.foldername(name))[1]=auth.uid()::text);
 
+create index if not exists queue_items_scheduled_at_idx on public.queue_items(scheduled_at);
+create index if not exists posting_logs_posted_at_idx on public.posting_logs(posted_at);
 notify pgrst, 'reload schema';
