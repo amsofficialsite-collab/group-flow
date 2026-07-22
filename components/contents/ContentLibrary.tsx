@@ -8,6 +8,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -45,6 +46,39 @@ const blank: Form = {
 
 const MAX_FILE_SIZE = 8 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+function formatFacebookPost(input: string) {
+  let text = input
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .trim();
+
+  if (!text) return "";
+
+  const sectionEmojis = "📢|📣|🚛|📍|💰|🎯|📋|👩|👨|💼|🎁|📩|📞|🌈|🏢|🕘|🗓️|🗓|🔎|✅";
+  text = text.replace(new RegExp(`\\s*(${sectionEmojis})\\s*`, "g"), "\n\n$1 ");
+
+  // สิ่งที่มักเป็นรายการย่อย ให้ขึ้นบรรทัดใหม่เพื่ออ่านง่ายบนมือถือ
+  text = text.replace(/\s*(✨|✔️|✔|☑️|☑|▪️|▪|•)\s*/g, "\n$1 ");
+
+  // แยกหัวข้อภาษาไทยที่พบบ่อย แม้ผู้ใช้ไม่ได้ใส่อีโมจิ
+  const headings = [
+    "ตำแหน่ง", "รายได้", "สถานที่ทำงาน", "คุณสมบัติ", "รายละเอียดงาน",
+    "หน้าที่ความรับผิดชอบ", "สวัสดิการ", "วันและเวลาทำงาน", "สนใจสมัคร",
+    "ช่องทางสมัคร", "ติดต่อ", "เงินเดือน"
+  ];
+  for (const heading of headings) {
+    text = text.replace(new RegExp(`\\s*(${heading}\\s*[:：]?)\\s*`, "g"), "\n\n$1\n");
+  }
+
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 export default function ContentLibrary() {
   const supabase = createBrowserClient(
@@ -370,13 +404,48 @@ export default function ContentLibrary() {
               </label>
 
               <label>
-                ข้อความ
+                <span className="flex items-center justify-between gap-3">
+                  <span>ข้อความ</span>
+                  <button
+                    type="button"
+                    className="btn-ghost px-3 py-1.5 text-xs"
+                    onClick={() => {
+                      const formatted = formatFacebookPost(form.body);
+                      setForm({ ...form, body: formatted });
+                    }}
+                  >
+                    <Sparkles size={15} />จัดโพสต์ให้อ่านง่าย
+                  </button>
+                </span>
                 <textarea
-                  className="input mt-1 min-h-40"
+                  className="input mt-1 min-h-52 leading-7"
+                  placeholder="วางข้อความยาว ๆ ได้เลย แล้วกด ‘จัดโพสต์ให้อ่านง่าย’"
                   value={form.body}
                   onChange={(event) => setForm({ ...form, body: event.target.value })}
                 />
+                <p className="mt-2 text-xs text-white/40">
+                  ระบบจะจัดหัวข้อ เว้นบรรทัด และแยกรายการให้เหมาะกับการอ่านบน Facebook โดยไม่เปลี่ยนใจความ
+                </p>
               </label>
+
+              {form.body.trim() && (
+                <div>
+                  <p className="mb-2 text-sm text-white/60">ตัวอย่างการแสดงผลบน Facebook</p>
+                  <div className="rounded-2xl border border-white/10 bg-[#242526] p-4 shadow-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-10 w-10 place-items-center rounded-full bg-white/10 text-xs font-bold">GF</div>
+                      <div>
+                        <p className="text-sm font-bold">ตัวอย่างโพสต์</p>
+                        <p className="text-xs text-white/45">กลุ่มสาธารณะ</p>
+                      </div>
+                    </div>
+                    <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-white/90">
+                      {form.body}
+                      {form.hashtags.trim() ? `\n\n${form.hashtags.trim()}` : ""}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <label>
                 Hashtag
