@@ -143,14 +143,73 @@ async function attachImages(imageUrls) {
   return true;
 }
 
-  function findPostButton() {
-    const buttons = [...document.querySelectorAll('[role="button"], button')].filter(visible);
-    return buttons.find((el) => {
-      const t = textOf(el);
-      const disabled = el.getAttribute("aria-disabled") === "true" || el.disabled;
-      return !disabled && (t === "โพสต์" || t === "post");
+ function findPostButton() {
+  const dialogs = [
+    ...document.querySelectorAll(
+      '[role="dialog"], [aria-modal="true"], div[role="dialog"]',
+    ),
+  ].filter(visible);
+
+  const searchRoots = dialogs.length > 0
+    ? dialogs.reverse()
+    : [document.body];
+
+  for (const root of searchRoots) {
+    const candidates = [
+      ...root.querySelectorAll(
+        'button, [role="button"], div[tabindex="0"]',
+      ),
+    ].filter(visible);
+
+    const exactMatch = candidates.find((element) => {
+      const text = textOf(element);
+      const ariaLabel = (
+        element.getAttribute("aria-label") || ""
+      ).trim().toLowerCase();
+
+      const disabled =
+        element.getAttribute("aria-disabled") === "true" ||
+        element.hasAttribute("disabled") ||
+        element.disabled === true;
+
+      if (disabled) return false;
+
+      return (
+        text === "โพสต์" ||
+        text === "post" ||
+        ariaLabel === "โพสต์" ||
+        ariaLabel === "post"
+      );
     });
+
+    if (exactMatch) return exactMatch;
+
+    const partialMatch = candidates.find((element) => {
+      const text = textOf(element);
+      const ariaLabel = (
+        element.getAttribute("aria-label") || ""
+      ).trim().toLowerCase();
+
+      const disabled =
+        element.getAttribute("aria-disabled") === "true" ||
+        element.hasAttribute("disabled") ||
+        element.disabled === true;
+
+      if (disabled) return false;
+
+      const combined = `${text} ${ariaLabel}`.trim();
+
+      return (
+        combined.includes("โพสต์") ||
+        combined.includes("post")
+      );
+    });
+
+    if (partialMatch) return partialMatch;
   }
+
+  return null;
+}
 
   function showPanel(job) {
     const existing = document.getElementById("groupflow-agent-panel");
