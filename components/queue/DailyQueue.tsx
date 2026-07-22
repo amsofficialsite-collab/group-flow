@@ -5,7 +5,15 @@ import { CalendarClock, Check, Copy, ExternalLink, Image as ImageIcon, Loader2, 
 import { createBrowserClient } from "@supabase/ssr";
 
 type Group = { id: string; name: string; facebook_url: string | null };
-type Content = { id: string; title: string; body: string; hashtags: string | null; image_url: string | null };
+type ContentImage = { image_url: string; sort_order: number };
+type Content = {
+  id: string;
+  title: string;
+  body: string;
+  hashtags: string | null;
+  image_url: string | null;
+  content_images?: ContentImage[];
+};
 type QueueRow = {
   id: string;
   scheduled_at: string;
@@ -36,8 +44,8 @@ export default function DailyQueue() {
     setLoading(true);
     const [g, c, q] = await Promise.all([
       supabase.from("groups").select("id,name,facebook_url").eq("active", true).order("name"),
-      supabase.from("content_items").select("id,title,body,hashtags,image_url").eq("status", "ready").order("created_at", { ascending: false }),
-      supabase.from("queue_items").select("id,scheduled_at,status,groups(id,name,facebook_url),content_items(id,title,body,hashtags,image_url)").order("scheduled_at", { ascending: true }),
+      supabase.from("content_items").select("id,title,body,hashtags,image_url,content_images(image_url,sort_order)").eq("status", "ready").order("created_at", { ascending: false }),
+      supabase.from("queue_items").select("id,scheduled_at,status,groups(id,name,facebook_url),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))").order("scheduled_at", { ascending: true }),
     ]);
     if (g.error) alert(g.error.message);
     if (c.error) alert(c.error.message);
@@ -138,6 +146,13 @@ export default function DailyQueue() {
         groupUrl: row.groups.facebook_url,
         caption: fullCaption(row),
         imageUrl: row.content_items?.image_url || null,
+        imageUrls: (row.content_items?.content_images || []).length
+          ? [...(row.content_items?.content_images || [])]
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((image) => image.image_url)
+          : row.content_items?.image_url
+            ? [row.content_items.image_url]
+            : [],
         autoPost,
         appOrigin: window.location.origin,
       },
