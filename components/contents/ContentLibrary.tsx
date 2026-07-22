@@ -480,11 +480,12 @@ export default function ContentLibrary() {
                   <ImagePlus size={20} />
                   {imagePreview ? "เปลี่ยนรูปภาพ" : "เลือกรูปภาพจากเครื่อง"}
                   <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    className="hidden"
-                    onChange={onSelectImage}
-                  />
+  type="file"
+  multiple
+  accept="image/jpeg,image/png,image/webp,image/gif"
+  className="hidden"
+  onChange={onSelectImage}
+/>
                 </label>
                 <p className="mt-2 text-xs text-white/40">
                   รองรับ JPG, PNG, WEBP, GIF ขนาดไม่เกิน 8 MB
