@@ -1,2 +1,1 @@
-import EmptyPage from "@/components/EmptyPage";
-export default function Page(){ return <EmptyPage title="Posting History" text="บันทึกผลการโพสต์สำเร็จและไม่สำเร็จ"/>; }
+import AppShell from "@/components/AppShell";import PostingHistory from "@/components/history/PostingHistory";export default function Page(){return <AppShell title="Posting History"><PostingHistory/></AppShell>}

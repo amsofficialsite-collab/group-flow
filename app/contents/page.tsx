@@ -1,2 +1,1 @@
-import EmptyPage from "@/components/EmptyPage";
-export default function Page(){ return <EmptyPage title="Content Library" text="เก็บข้อความ รูปภาพ ลิงก์ และแฮชแท็ก"/>; }
+import AppShell from "@/components/AppShell";import ContentLibrary from "@/components/contents/ContentLibrary";export default function Page(){return <AppShell title="Content Library"><ContentLibrary/></AppShell>}

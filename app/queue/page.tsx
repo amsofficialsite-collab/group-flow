@@ -1,2 +1,1 @@
-import EmptyPage from "@/components/EmptyPage";
-export default function Page(){ return <EmptyPage title="Daily Queue" text="จัดคิวงานโพสต์ในแต่ละวัน"/>; }
+import AppShell from "@/components/AppShell";import DailyQueue from "@/components/queue/DailyQueue";export default function Page(){return <AppShell title="Daily Queue"><DailyQueue/></AppShell>}
