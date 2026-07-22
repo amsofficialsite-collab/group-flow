@@ -165,17 +165,34 @@ export default function ContentLibrary() {
   function closeModal() {
     resetImageState();
     setOpen(false);
+  function onSelectImage(event: ChangeEvent<HTMLInputElement>) {
+  const files = Array.from(event.target.files || []);
+  event.target.value = "";
+
+  if (!files.length) return;
+
+  const validFiles: File[] = [];
+  const previews: string[] = [];
+
+  for (const file of files) {
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      alert(`${file.name} ไม่ใช่ไฟล์รูปที่รองรับ`);
+      continue;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      alert(`${file.name} มีขนาดเกิน 8 MB`);
+      continue;
+    }
+
+    validFiles.push(file);
+    previews.push(URL.createObjectURL(file));
   }
 
-  function onSelectImage(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
+  setImageFiles((prev) => [...prev, ...validFiles]);
+  setImagePreviews((prev) => [...prev, ...previews]);
 
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      alert("รองรับเฉพาะไฟล์ JPG, PNG, WEBP และ GIF ค่ะ");
-      return;
-    }
+  setRemoveCurrentImage(false);
 
     if (file.size > MAX_FILE_SIZE) {
       alert("ขนาดรูปต้องไม่เกิน 8 MB ค่ะ");
