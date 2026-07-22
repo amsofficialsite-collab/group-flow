@@ -91,8 +91,8 @@ export default function ContentLibrary() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(blank);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState("");
+ const [imageFiles, setImageFiles] = useState<File[]>([]);
+ const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [removeCurrentImage, setRemoveCurrentImage] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
