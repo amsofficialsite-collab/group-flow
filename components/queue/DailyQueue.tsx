@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Check, Copy, ExternalLink, Image as ImageIcon, Loader2, Plus, Send, Trash2, X } from "lucide-react";
+import { CalendarClock, Check, Copy, ExternalLink, Image as ImageIcon, Loader2, Plus, Send, Trash2, X, Puzzle } from "lucide-react";
 import { createBrowserClient } from "@supabase/ssr";
 
 type Group = { id: string; name: string; facebook_url: string | null };
@@ -49,6 +49,31 @@ export default function DailyQueue() {
   }
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const onResult = async (event: Event) => {
+      const detail = (event as CustomEvent).detail as { queueId?: string; result?: "posted" | "failed"; postUrl?: string; notes?: string };
+      if (!detail?.queueId || !detail?.result) return;
+      const now = new Date().toISOString();
+      const { error: updateError } = await supabase.from("queue_items").update({ status: detail.result, updated_at: now }).eq("id", detail.queueId);
+      if (updateError) return alert(updateError.message);
+      const row = rows.find(r => r.id === detail.queueId);
+      const { error: logError } = await supabase.from("posting_logs").insert({
+        queue_id: detail.queueId,
+        group_id: row?.groups?.id || null,
+        content_id: row?.content_items?.id || null,
+        result: detail.result,
+        post_url: detail.postUrl || null,
+        notes: detail.notes || "บันทึกจาก Chrome Posting Agent",
+        posted_at: now,
+      });
+      if (logError) return alert(logError.message);
+      await load();
+      alert(detail.result === "posted" ? "Posting Agent รายงานว่าโพสต์สำเร็จแล้วค่ะ" : "Posting Agent รายงานว่าโพสต์ไม่สำเร็จค่ะ");
+    };
+    window.addEventListener("groupflow:post-result", onResult as EventListener);
+    return () => window.removeEventListener("groupflow:post-result", onResult as EventListener);
+  }, [rows]);
+
 
   async function add() {
     if (!groupId || !contentId || !when) return alert("เลือกกลุ่ม คอนเทนต์ และวันเวลาให้ครบค่ะ");
@@ -101,6 +126,28 @@ export default function DailyQueue() {
     setAssistant(row);
   }
 
+
+  function sendToPostingAgent(row: QueueRow, autoPost = false) {
+    if (!row.groups?.facebook_url) return alert("กลุ่มนี้ยังไม่มี Facebook URL ค่ะ");
+    const event = new CustomEvent("groupflow:start-post", {
+      detail: {
+        queueId: row.id,
+        groupId: row.groups?.id || null,
+        contentId: row.content_items?.id || null,
+        groupName: row.groups?.name || "Facebook Group",
+        groupUrl: row.groups.facebook_url,
+        caption: fullCaption(row),
+        imageUrl: row.content_items?.image_url || null,
+        autoPost,
+        appOrigin: window.location.origin,
+      },
+    });
+    window.dispatchEvent(event);
+    alert(autoPost
+      ? "ส่งงานไปที่ GROUP FLOW Posting Agent แล้วค่ะ ระบบจะเตรียมและกดโพสต์ให้อัตโนมัติ"
+      : "ส่งงานไปที่ GROUP FLOW Posting Agent แล้วค่ะ ระบบจะเตรียมโพสต์ให้ตรวจสอบก่อนกดโพสต์");
+  }
+
   async function finish(result: "posted" | "failed") {
     if (!assistant) return;
     setBusy(true);
@@ -141,7 +188,9 @@ export default function DailyQueue() {
         <div className="flex flex-wrap gap-2">
           <button className="btn-ghost" onClick={() => void copyCaption(row)}><Copy size={16}/>ข้อความ</button>
           {row.content_items?.image_url && <button className="btn-ghost" onClick={() => void copyImage(row)}><ImageIcon size={16}/>รูป</button>}
-          <button className="btn-primary" disabled={!row.groups?.facebook_url} onClick={() => startPost(row)}><Send size={16}/>เริ่มโพสต์</button>
+          <button className="btn-ghost" disabled={!row.groups?.facebook_url} onClick={() => sendToPostingAgent(row, false)}><Puzzle size={16}/>Agent: ตรวจสอบก่อน</button>
+          <button className="btn-primary" disabled={!row.groups?.facebook_url} onClick={() => sendToPostingAgent(row, true)}><Send size={16}/>Agent: โพสต์อัตโนมัติ</button>
+          <button className="btn-ghost" disabled={!row.groups?.facebook_url} onClick={() => startPost(row)}><ExternalLink size={16}/>โพสต์ด้วยตนเอง</button>
           <button className="btn-danger" onClick={() => void remove(row.id)}><Trash2 size={16}/></button>
         </div>
       </div>)}</div>

@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "GROUP FLOW Posting Agent",
+  "version": "1.0.0",
+  "description": "รับคิวจาก GROUP FLOW แล้วช่วยเตรียมโพสต์ Facebook Group พร้อมข้อความและรูปภาพ",
+  "permissions": ["storage", "tabs", "scripting", "notifications"],
+  "host_permissions": [
+    "https://www.facebook.com/*",
+    "https://facebook.com/*",
+    "https://*.supabase.co/*",
+    "https://*.vercel.app/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_title": "GROUP FLOW Posting Agent",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.vercel.app/*", "http://localhost:3000/*"],
+      "js": ["app-bridge.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://www.facebook.com/*", "https://facebook.com/*"],
+      "js": ["facebook-poster.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

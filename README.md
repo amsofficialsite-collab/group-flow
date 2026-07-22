@@ -1,29 +1,30 @@
-# GROUP FLOW V4.0 COMPLETE
+# GROUP FLOW V5 — Posting Agent
 
-เวอร์ชันใช้งานจริงสำหรับจัดการ Facebook Group Content
+เวอร์ชันนี้ต่อยอดจาก V4 และเพิ่ม Chrome Extension สำหรับรับงานจาก Daily Queue แล้วเปิด Facebook Group ใส่ข้อความ แนบรูป และเลือกได้ทั้งโหมดตรวจสอบก่อนหรือโหมดกดโพสต์อัตโนมัติ
 
-## มีอะไรบ้าง
-- Supabase Login
-- Group Manager
-- Content Library พร้อมอัปโหลด/เปลี่ยน/ลบรูป
-- Daily Queue
-- Posting Assistant: คัดลอกข้อความ, คัดลอกรูป, เปิดกลุ่ม, บันทึกผลและลิงก์โพสต์
-- Dashboard และ Posting History
-- Settings
+## ติดตั้งเว็บ
 
-## ติดตั้ง
-1. Supabase > SQL Editor > New Query
-2. เปิด `supabase/v4_complete.sql` แล้ว Run ทั้งไฟล์
-3. อัปโหลดไฟล์ทั้งหมดทับ GitHub repository เดิม
-4. รอ Vercel Deployment ขึ้น Ready
-5. เปิดเว็บแล้วกด Ctrl+F5
+1. รัน `supabase/v4_complete.sql` ใน Supabase SQL Editor เพื่อสร้างตารางและ Storage bucket `content-images`
+2. อัปโหลดไฟล์โปรเจกต์ขึ้น GitHub เดิม
+3. รอ Vercel Deploy
+4. ตรวจ Environment Variables:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
-## วิธีโพสต์
-1. เพิ่ม Content พร้อมรูปและตั้งสถานะ Ready
-2. เพิ่ม Daily Queue โดยเลือก Content + Group + เวลา
-3. กด “เริ่มโพสต์”
-4. คัดลอกข้อความและรูป แล้วเปิด Facebook Group
-5. วางและกดโพสต์บน Facebook
-6. กลับมาบันทึก “โพสต์สำเร็จ” และวางลิงก์โพสต์
+## ติดตั้ง Chrome Extension
 
-หมายเหตุ: Facebook ไม่อนุญาตให้เว็บทั่วไปกดโพสต์แทนผู้ใช้โดยตรงโดยไม่มีสิทธิ์ Meta API ที่ได้รับอนุมัติ ดังนั้น V4 ใช้ Posting Assistant ซึ่งใช้งานได้ทันทีและไม่ต้องขอ App Review
+ดู `chrome-extension/INSTALL.md`
+
+## วิธีใช้งาน
+
+1. เพิ่ม Content พร้อมรูป
+2. เพิ่ม Facebook Group URL
+3. สร้าง Daily Queue
+4. เลือก:
+   - Agent: ตรวจสอบก่อน
+   - Agent: โพสต์อัตโนมัติ
+5. Extension เปิด Facebook Group ใส่ข้อความและรูป แล้วส่งผลกลับ Posting History
+
+## หมายเหตุ
+
+Facebook สามารถเปลี่ยนโครงสร้างหน้าเว็บได้ จึงอาจต้องปรับ selector ใน Extension ภายหลัง ระบบไม่จัดการ CAPTCHA, checkpoint หรือการยืนยันตัวตนแทนผู้ใช้
