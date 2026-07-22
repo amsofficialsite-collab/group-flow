@@ -39,32 +39,109 @@
     document.execCommand("insertText", false, text);
     el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
   }
+async function attachImages(imageUrls) {
+  const urls = Array.isArray(imageUrls)
+    ? imageUrls.filter(Boolean)
+    : [];
 
-  async function attachImage(imageUrl) {
-    if (!imageUrl) return true;
+  if (urls.length === 0) return true;
+
+  const files = [];
+
+  for (let index = 0; index < urls.length; index += 1) {
+    const imageUrl = urls[index];
+
     const response = await fetch(imageUrl);
-    if (!response.ok) throw new Error("ดาวน์โหลดรูปไม่สำเร็จ");
-    const blob = await response.blob();
-    const ext = blob.type.includes("png") ? "png" : blob.type.includes("webp") ? "webp" : "jpg";
-    const file = new File([blob], `group-flow-${Date.now()}.${ext}`, { type: blob.type || "image/jpeg" });
 
-    let input = [...document.querySelectorAll('input[type="file"]')].find(visible);
-    if (!input) {
-      const photoButton = [...document.querySelectorAll('[role="button"], div[tabindex="0"]')].filter(visible).find((el) => {
-        const t = textOf(el);
-        return t.includes("รูปภาพ") || t.includes("photo/video") || t.includes("photo");
-      });
-      if (photoButton) photoButton.click();
-      input = await waitFor(() => [...document.querySelectorAll('input[type="file"]')].find((el) => !el.disabled), 8000);
+    if (!response.ok) {
+      throw new Error(`ดาวน์โหลดรูปที่ ${index + 1} ไม่สำเร็จ`);
     }
-    if (!input) throw new Error("ไม่พบช่องอัปโหลดรูปของ Facebook");
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    Object.defineProperty(input, "files", { value: transfer.files, configurable: true });
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    await sleep(2500);
-    return true;
+
+    const blob = await response.blob();
+
+    const ext = blob.type.includes("png")
+      ? "png"
+      : blob.type.includes("webp")
+        ? "webp"
+        : blob.type.includes("gif")
+          ? "gif"
+          : "jpg";
+
+    files.push(
+      new File(
+        [blob],
+        `group-flow-${Date.now()}-${index + 1}.${ext}`,
+        {
+          type: blob.type || "image/jpeg",
+        },
+      ),
+    );
   }
+
+  let input = [...document.querySelectorAll('input[type="file"]')]
+    .find((element) => !element.disabled);
+
+  if (!input) {
+    const photoButton = [
+      ...document.querySelectorAll(
+        '[role="button"], div[tabindex="0"], button',
+      ),
+    ]
+      .filter(visible)
+      .find((element) => {
+        const text = textOf(element);
+
+        return (
+          text.includes("รูปภาพ/วิดีโอ") ||
+          text.includes("รูปภาพ") ||
+          text.includes("photo/video") ||
+          text === "photo"
+        );
+      });
+
+    if (photoButton) {
+      photoButton.click();
+    }
+
+    input = await waitFor(
+      () =>
+        [...document.querySelectorAll('input[type="file"]')]
+          .find((element) => !element.disabled),
+      10000,
+    );
+  }
+
+  if (!input) {
+    throw new Error("ไม่พบช่องอัปโหลดรูปของ Facebook");
+  }
+
+  const transfer = new DataTransfer();
+
+  files.forEach((file) => {
+    transfer.items.add(file);
+  });
+
+  Object.defineProperty(input, "files", {
+    value: transfer.files,
+    configurable: true,
+  });
+
+  input.dispatchEvent(
+    new Event("input", {
+      bubbles: true,
+    }),
+  );
+
+  input.dispatchEvent(
+    new Event("change", {
+      bubbles: true,
+    }),
+  );
+
+  await sleep(Math.max(4000, files.length * 1800));
+
+  return true;
+}
 
   function findPostButton() {
     const buttons = [...document.querySelectorAll('[role="button"], button')].filter(visible);
