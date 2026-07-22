@@ -184,11 +184,20 @@ async function attachImages(imageUrls) {
 
       status.textContent = "กำลังใส่ข้อความ…";
       setEditableText(editor, job.caption || "");
-      if (job.imageUrl) {
-        status.textContent = "กำลังแนบรูปภาพ…";
-        await attachImage(job.imageUrl);
-      }
+      const imageUrls =
+  Array.isArray(job.imageUrls) && job.imageUrls.length > 0
+    ? job.imageUrls
+    : job.imageUrl
+      ? [job.imageUrl]
+      : [];
 
+if (imageUrls.length > 0) {
+  status.textContent = `กำลังแนบรูปภาพ 0/${imageUrls.length}…`;
+
+  await attachImages(imageUrls);
+
+  status.textContent = `แนบรูปภาพครบ ${imageUrls.length} รูปแล้ว`;
+}
       const postButton = await waitFor(findPostButton, 15000);
       if (!postButton) throw new Error("ไม่พบปุ่มโพสต์");
 
