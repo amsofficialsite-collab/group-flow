@@ -257,7 +257,15 @@ if (imageUrls.length > 0) {
 
   status.textContent = `แนบรูปภาพครบ ${imageUrls.length} รูปแล้ว`;
 }
-      const postButton = await waitFor(findPostButton, 15000);
+      status.textContent = "กำลังรอ Facebook เตรียมปุ่มโพสต์…";
+
+const postButton = await waitFor(findPostButton, 30000);
+
+if (!postButton) {
+  throw new Error(
+    "ไม่พบปุ่มโพสต์ กรุณาตรวจสอบว่าหน้าต่างสร้างโพสต์เปิดอยู่และรูปอัปโหลดเสร็จแล้ว",
+  );
+}
       if (!postButton) throw new Error("ไม่พบปุ่มโพสต์");
 
       if (job.autoPost) {
