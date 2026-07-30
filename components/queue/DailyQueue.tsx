@@ -137,31 +137,29 @@ export default function DailyQueue() {
 
   function sendToPostingAgent(row: QueueRow, autoPost = false) {
     if (!row.groups?.facebook_url) return alert("กลุ่มนี้ยังไม่มี Facebook URL ค่ะ");
-    const event = new CustomEvent("groupflow:start-post", {
-      detail: {
-        queueId: row.id,
-        groupId: row.groups?.id || null,
-        contentId: row.content_items?.id || null,
-        groupName: row.groups?.name || "Facebook Group",
-        groupUrl: row.groups.facebook_url,
-        caption: fullCaption(row),
-        imageUrl: row.content_items?.image_url || null,
-        imageUrls: (row.content_items?.content_images || []).length
-          ? [...(row.content_items?.content_images || [])]
-              .sort((a, b) => a.sort_order - b.sort_order)
-              .map((image) => image.image_url)
-          : row.content_items?.image_url
-            ? [row.content_items.image_url]
-            : [],
-        autoPost,
-        appOrigin: window.location.origin,
-      },
-    });
-    window.dispatchEvent(event);
-    alert(autoPost
-      ? "ส่งงานไปที่ GROUP FLOW Posting Agent แล้วค่ะ ระบบจะเตรียมและกดโพสต์ให้อัตโนมัติ"
-      : "ส่งงานไปที่ GROUP FLOW Posting Agent แล้วค่ะ ระบบจะเตรียมโพสต์ให้ตรวจสอบก่อนกดโพสต์");
-  }
+    const imageUrls = Array.isArray(item.content_images)
+  ? item.content_images
+      .sort(
+        (a, b) =>
+          Number(a.sort_order ?? 0) -
+          Number(b.sort_order ?? 0)
+      )
+      .map((image) => image.image_url)
+      .filter(Boolean)
+  : [];
+
+window.dispatchEvent(
+  new CustomEvent("groupflow:start-post", {
+    detail: {
+      queueId: item.id,
+      groupUrl: item.group_url || item.groupUrl,
+      groupName: item.group_name || item.groupName,
+      caption: item.caption || item.content || "",
+      imageUrls: imageUrls,
+      autoPost: true
+    }
+  })
+);
 
   async function finish(result: "posted" | "failed") {
     if (!assistant) return;
