@@ -24,28 +24,55 @@
     const text = String(value || "").replace(/\r\n?/g, "\n").trim();
     if (!text) return "";
 
-    const marker = text.slice(0, Math.min(24, text.length)).trim();
-    if (marker.length >= 8) {
-      const secondStart = text.indexOf(marker, marker.length);
-      if (secondStart > 0) {
-        const first = text.slice(0, secondStart).trim();
-        const second = text.slice(secondStart).trim();
-        if (normalizeForCompare(first) === normalizeForCompare(second)) {
-          return second;
+    // Facebook sometimes receives the same caption twice: one compact copy
+    // followed by the formatted copy. Compare without whitespace so both
+    // versions are recognized as duplicates.
+    const compactChars = [];
+    const originalIndexes = [];
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (/\s/u.test(ch)) continue;
+      compactChars.push(ch.toLowerCase());
+      originalIndexes.push(i);
+    }
+    const compact = compactChars.join("");
+
+    // Use a stable text anchor rather than leading emoji/punctuation because
+    // Facebook may drop the first emoji in one of the duplicate copies.
+    const anchorMatch = compact.match(/[\p{L}\p{N}][\p{L}\p{N}]{17,79}/u);
+    if (anchorMatch) {
+      const anchor = anchorMatch[0];
+      const first = compact.indexOf(anchor);
+      const second = compact.indexOf(anchor, first + anchor.length);
+      if (second > first + 100) {
+        let originalStart = originalIndexes[second] ?? 0;
+        // Keep leading emoji/punctuation immediately before the second copy.
+        let back = originalStart - 1;
+        let steps = 0;
+        while (back >= 0 && steps < 12 && !/[\p{L}\p{N}]/u.test(text[back])) {
+          originalStart = back;
+          if (text[back] === "\n" && steps > 0) break;
+          back -= 1;
+          steps += 1;
         }
+        return text.slice(originalStart).trim();
       }
     }
 
+    // Fallback: find two nearly equal halves after whitespace normalization.
     const midpoint = Math.floor(text.length / 2);
-    for (let offset = -120; offset <= 120; offset += 1) {
+    for (let offset = -250; offset <= 250; offset += 1) {
       const split = midpoint + offset;
       if (split <= 0 || split >= text.length) continue;
       const first = text.slice(0, split).trim();
       const second = text.slice(split).trim();
-      if (first.length > 100 && normalizeForCompare(first) === normalizeForCompare(second)) {
+      const a = normalizeForCompare(first);
+      const b = normalizeForCompare(second);
+      if (a.length > 200 && (a === b || a.includes(b) || b.includes(a))) {
         return second;
       }
     }
+
     return text;
   }
 
@@ -75,8 +102,73 @@
     }) || editors[0] || null;
   }
 
+  function formatCaption(rawText) {
+    let text = dedupeCaption(rawText)
+      .replace(/\r\n?/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .trim();
+    if (!text) return "";
+
+    // Keep captions that already have useful paragraph breaks.
+    const existingBreaks = (text.match(/\n/g) || []).length;
+    if (existingBreaks >= 4) return text.replace(/\n{3,}/g, "\n\n");
+
+    const sectionMarkers = [
+      "✏️รายละเอียดงาน",
+      "🏢สถานที่ทำงาน",
+      "💐คุณสมบัติของผู้สมัคร",
+      "🌈สวัสดิการ",
+      "📌 หมายเหตุ",
+      "📌หมายเหตุ",
+      "🙋🏻‍♀️ติดต่อสอบถาม",
+      "🙋🏻‍♀️ ติดต่อสอบถาม",
+      "📣📥ลิ้งค์สำหรับสมัครงาน",
+      "📣📥ลิงก์สำหรับสมัครงาน",
+      "และโครงการต่าง ๆ อาทิ",
+      "และโครงการต่างๆ อาทิ"
+    ];
+    for (const marker of sectionMarkers) {
+      text = text.split(marker).join(`\n\n${marker}\n`);
+    }
+
+    // Separate common detail lines without breaking every emoji in normal prose.
+    const lineMarkers = [
+      "📞 โทรติดตาม", "📞โทรติดตาม",
+      "📊ติดตาม", "📊 ติดตาม",
+      "👩🏻‍❤️‍👩🏼บริการ", "👩🏻‍❤️‍👩🏼 บริการ",
+      "✨อายุ", "✨ อายุ", "✨ไม่จำกัด", "✨ ไม่จำกัด",
+      "✨มีประสบการณ์", "✨ มีประสบการณ์", "✨มีใจรัก", "✨ มีใจรัก",
+      "✨มีความรับผิดชอบ", "✨ มีความรับผิดชอบ", "✨มีทักษะ", "✨ มีทักษะ",
+      "✨เรียนรู้ไว", "✨ เรียนรู้ไว", "✨ชอบการ", "✨ ชอบการ",
+      "✨สามารถแก้ไข", "✨ สามารถแก้ไข", "✨รับแรง", "✨ รับแรง",
+      "💰 ฐานเงินเดือน", "📈 ปรับขึ้นเงินเดือน", "⏰ ค่าจ้างล่วงเวลา",
+      "🏢 ประกันสังคม", "🏥 ประกันสุขภาพ", "🚑 ประกันอุบัติเหตุ",
+      "🏦 กองทุนสำรองเลี้ยงชีพ", "💳 เงินกู้ฉุกเฉิน", "💼 เงินฝากสหกรณ์",
+      "🌴 วันลาพักร้อน", "🎉", "👕 เสื้อพนักงาน",
+      "✈️ สัมมนาประจำปี", "🍚 โครงการ", "🥪 โครงการ", "💪โครงการ", "💪 โครงการ",
+      "Line :", "Line:", "FB :", "FB:", "☎️"
+    ];
+    for (const marker of lineMarkers) {
+      text = text.split(marker).join(`\n${marker}`);
+    }
+
+    // Improve the opening block.
+    text = text
+      .replace(/(‼️[^\n]*‼️)/u, "$1\n")
+      .replace(/(🚜[^\n]*🚜)/u, "$1\n")
+      .replace(/(👩🏻‍💻[^\n]*👩🏻‍💻)/u, "$1\n")
+      .replace(/(💰[^\n]*💰)/u, "$1\n")
+      .replace(/(🎯[^\n]*📈)/u, "$1\n");
+
+    return text
+      .replace(/^\s*\n+/, "")
+      .replace(/\n[ \t]+/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
   function replaceEditorText(editor, rawText) {
-    const text = dedupeCaption(rawText);
+    const text = formatCaption(rawText);
     editor.focus();
 
     const selection = window.getSelection();
@@ -125,12 +217,20 @@
     return new File([bytes], `group-flow-${Date.now()}-${index + 1}.${ext}`, { type: mime });
   }
 
-  function findImageInput() {
-    const inputs = [...document.querySelectorAll('input[type="file"]')].filter((el) => !el.disabled);
-    return inputs.find((el) => {
-      const accept = (el.accept || "").toLowerCase();
-      return accept.includes("image") && el.multiple;
-    }) || inputs.find((el) => (el.accept || "").toLowerCase().includes("image")) || null;
+  function findImageInput(dialog = getCreatePostDialog()) {
+    const roots = dialog ? [dialog, document] : [document];
+    for (const root of roots) {
+      const inputs = [...root.querySelectorAll('input[type="file"]')]
+        .filter((el) => !el.disabled);
+      const preferred = inputs.find((el) => {
+        const accept = (el.accept || "").toLowerCase();
+        return accept.includes("image") && el.multiple;
+      });
+      if (preferred) return preferred;
+      const anyImage = inputs.find((el) => (el.accept || "").toLowerCase().includes("image"));
+      if (anyImage) return anyImage;
+    }
+    return null;
   }
 
   async function attachImages(imageUrls, setStatus) {
@@ -144,27 +244,71 @@
     const dialog = getCreatePostDialog();
     if (!dialog) throw new Error("ไม่พบหน้าต่างสร้างโพสต์");
 
-    let input = findImageInput();
-    if (!input) {
-      const photoButton = [...dialog.querySelectorAll('[role="button"], button, div[tabindex="0"]')].filter(visible).find((el) => {
+    const photoButton = [...dialog.querySelectorAll('[role="button"], button, div[tabindex="0"]')]
+      .filter(visible)
+      .find((el) => {
         const combined = `${textOf(el)} ${(el.getAttribute("aria-label") || "").toLowerCase()}`;
         return combined.includes("รูปภาพ/วิดีโอ") || combined.includes("รูปภาพ") || combined.includes("photo/video") || combined.includes("photo");
       });
-      if (!photoButton) throw new Error("ไม่พบปุ่มรูปภาพ/วิดีโอ");
-      photoButton.click();
-      input = await waitFor(findImageInput, 10000);
+
+    async function getInput() {
+      let input = findImageInput(dialog);
+      if (!input && photoButton) {
+        photoButton.click();
+        await sleep(700);
+        input = await waitFor(() => findImageInput(dialog), 12000);
+      }
+      return input;
     }
 
+    async function assignFiles(input, selectedFiles) {
+      const transfer = new DataTransfer();
+      selectedFiles.forEach((file) => transfer.items.add(file));
+      const filesSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files")?.set;
+      if (filesSetter) filesSetter.call(input, transfer.files);
+      else Object.defineProperty(input, "files", { value: transfer.files, configurable: true });
+      input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+      return input.files?.length || 0;
+    }
+
+    let input = await getInput();
     if (!input) throw new Error("ไม่พบช่องอัปโหลดรูปของ Facebook");
 
-    const transfer = new DataTransfer();
-    files.forEach((file) => transfer.items.add(file));
-    Object.defineProperty(input, "files", { value: transfer.files, configurable: true });
-    input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    // First try sending every image in one selection.
+    let accepted = await assignFiles(input, files);
+
+    // Some Facebook layouts expose a single-file input. In that case, add images one-by-one.
+    if (accepted < files.length && files.length > 1) {
+      for (let i = accepted; i < files.length; i += 1) {
+        setStatus(`กำลังเพิ่มรูป ${i + 1}/${files.length}…`);
+        input = await getInput();
+        if (!input) throw new Error(`ไม่พบช่องอัปโหลดสำหรับรูปที่ ${i + 1}`);
+        const count = await assignFiles(input, [files[i]]);
+        if (count < 1) throw new Error(`Facebook ไม่รับรูปที่ ${i + 1}`);
+        await sleep(1200);
+      }
+    }
 
     setStatus(`กำลังอัปโหลดรูป ${files.length} รูป…`);
-    await sleep(Math.max(7000, files.length * 3000));
+
+    // Require at least the requested number of visible previews where possible.
+    const previewReady = await waitFor(() => {
+      const currentDialog = getCreatePostDialog();
+      if (!currentDialog) return null;
+      const images = [...currentDialog.querySelectorAll('img')].filter((img) => {
+        const src = img.currentSrc || img.src || "";
+        const rect = img.getBoundingClientRect();
+        return src && rect.width >= 70 && rect.height >= 70;
+      });
+      return images.length >= files.length ? images : null;
+    }, Math.max(45000, files.length * 15000), 500);
+
+    if (!previewReady) {
+      throw new Error(`Facebook แสดงรูปไม่ครบ กรุณาตรวจสอบ (${files.length} รูป)`);
+    }
+
+    await sleep(Math.max(3000, files.length * 1200));
   }
 
   function findPostButton() {
@@ -186,7 +330,7 @@
     panel.id = "groupflow-agent-panel";
     panel.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483647;width:360px;background:#10131a;color:white;border:1px solid #3b82f6;border-radius:16px;padding:16px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.45)";
     panel.innerHTML = `
-      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V4</div>
+      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V7</div>
       <div style="margin-top:6px;font-size:12px;color:#93c5fd">${job.groupName || "Facebook Group"}</div>
       <div id="gf-status" style="margin-top:10px;font-size:13px;line-height:1.5;color:#e2e8f0">กำลังเตรียมโพสต์…</div>
       <div style="display:flex;gap:8px;margin-top:14px">
@@ -241,7 +385,7 @@
         await sleep(1000);
         postButton.click();
         await sleep(4000);
-        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V4" });
+        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V7" });
         setStatus("ส่งคำสั่งโพสต์แล้ว และบันทึกผลกลับ GROUP FLOW แล้ว");
       } else {
         setStatus("เตรียมโพสต์เรียบร้อย กรุณาตรวจสอบแล้วกดปุ่มด้านล่าง");
@@ -252,7 +396,7 @@
           latestButton.click();
           setStatus("กำลังโพสต์…");
           await sleep(4000);
-          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V4" });
+          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V7" });
         };
       }
     } catch (error) {
