@@ -291,23 +291,27 @@
       return input.files?.length || 0;
     }
 
-    let input = await getInput();
-    if (!input) throw new Error("ไม่พบช่องอัปโหลดรูปของ Facebook");
+   let input = await getInput();
 
-    // First try sending every image in one selection.
-    let accepted = await assignFiles(input, files);
+if (!input) {
+  throw new Error("ไม่พบช่องอัปโหลดรูปของ Facebook");
+}
 
-    // Some Facebook layouts expose a single-file input. In that case, add images one-by-one.
-    if (accepted < files.length && files.length > 1) {
-      for (let i = accepted; i < files.length; i += 1) {
-        setStatus(`กำลังเพิ่มรูป ${i + 1}/${files.length}…`);
-        input = await getInput();
-        if (!input) throw new Error(`ไม่พบช่องอัปโหลดสำหรับรูปที่ ${i + 1}`);
-        const count = await assignFiles(input, [files[i]]);
-        if (count < 1) throw new Error(`Facebook ไม่รับรูปที่ ${i + 1}`);
-        await sleep(1200);
-      }
-    }
+// บังคับให้ input รองรับหลายไฟล์
+input.multiple = true;
+input.setAttribute("multiple", "");
+
+setStatus(`กำลังส่งรูปทั้งหมด ${files.length} รูปเข้า Facebook…`);
+
+const accepted = await assignFiles(input, files);
+
+if (accepted !== files.length) {
+  throw new Error(
+    `ส่งรูปเข้า input ไม่ครบ: ส่ง ${files.length} รูป แต่ input รับ ${accepted} รูป`
+  );
+}
+
+await sleep(2500);
 
     setStatus(`กำลังอัปโหลดรูป ${files.length} รูป…`);
 
