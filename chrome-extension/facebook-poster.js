@@ -168,25 +168,44 @@
   }
 
   function replaceEditorText(editor, rawText) {
-    const text = formatCaption(rawText);
-    editor.focus();
+  const text = formatCaption(rawText);
 
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    selection.removeAllRanges();
-    selection.addRange(range);
+  editor.focus();
 
-    document.execCommand("delete", false);
-    const inserted = document.execCommand("insertText", false, text);
+  // ล้างข้อความเดิมให้หมด
+  editor.replaceChildren();
 
-    if (!inserted) {
-      throw new Error("Facebook ไม่รับคำสั่งใส่ข้อความอัตโนมัติ");
+  const lines = text.split("\n");
+
+  lines.forEach((line, index) => {
+    if (line) {
+      editor.appendChild(document.createTextNode(line));
     }
 
-    return text;
-  }
+    if (index < lines.length - 1) {
+      editor.appendChild(document.createElement("br"));
+    }
+  });
 
+  // แจ้ง Facebook ว่าข้อความมีการเปลี่ยนแปลง
+  editor.dispatchEvent(
+    new InputEvent("input", {
+      bubbles: true,
+      composed: true,
+      inputType: "insertText",
+      data: text
+    })
+  );
+
+  editor.dispatchEvent(
+    new Event("change", {
+      bubbles: true,
+      composed: true
+    })
+  );
+
+  return text;
+}
   function normalizeImageUrls(job) {
     const urls = Array.isArray(job?.imageUrls) && job.imageUrls.length
       ? job.imageUrls
