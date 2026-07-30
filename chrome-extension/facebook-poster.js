@@ -396,13 +396,15 @@ await sleep(2500);
       const actual = normalizeForCompare(editor.innerText || editor.textContent || "");
       if (expected && !actual.includes(expected)) throw new Error("Facebook ไม่รับข้อความอัตโนมัติ");
 
-      const imageUrls = normalizeImageUrls(job);
-      if (imageUrls.length) await attachImages(imageUrls, setStatus);
+       const imageUrls = normalizeImageUrls(job);
 
-      setStatus("กำลังรอปุ่มโพสต์…");
-      const postButton = await waitFor(findPostButton, 40000);
-      if (!postButton) throw new Error("ไม่พบปุ่มโพสต์ หรือ Facebook ยังอัปโหลดรูปไม่เสร็จ");
+setStatus(`Posting Flow ส่งมา ${imageUrls.length} รูป`);
 
+await sleep(1500);
+
+if (imageUrls.length) {
+  await attachImages(imageUrls, setStatus);
+}
       if (job.autoPost) {
         setStatus("กำลังกดโพสต์อัตโนมัติ…");
         await sleep(1000);
