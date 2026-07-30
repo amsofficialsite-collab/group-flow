@@ -1,4 +1,4 @@
-(() => {
+  (() => {
   if (window.__GROUPFLOW_AGENT_RUNNING__) return;
   window.__GROUPFLOW_AGENT_RUNNING__ = true;
 
