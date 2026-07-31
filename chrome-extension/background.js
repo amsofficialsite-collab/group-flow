@@ -7,6 +7,8 @@ const SCHEDULER_ALARM_NAME = "GROUPFLOW_SCHEDULER";
 const API_BASE_URL = String(self.GROUPFLOW_CONFIG?.API_BASE_URL || "").replace(/\/$/, "");
 const AGENT_SECRET = String(self.GROUPFLOW_CONFIG?.AGENT_SECRET || "");
 
+console.log("API =", API_BASE_URL);
+console.log("SECRET =", AGENT_SECRET);
 function assertConfig() {
   if (!API_BASE_URL || API_BASE_URL.includes("YOUR-PROJECT")) {
     throw new Error("ยังไม่ได้ตั้งค่า API_BASE_URL ใน config.js");
