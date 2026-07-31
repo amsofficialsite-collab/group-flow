@@ -56,12 +56,22 @@ function formatFacebookCaption(rawText: string): string {
 }
 
 export async function POST(request: NextRequest) {
-  if (
-    request.headers.get("x-groupflow-agent-secret") !==
-    process.env.GROUPFLOW_AGENT_SECRET
-  ) {
-    return unauthorized();
-  }
+ const headerSecret = request.headers.get("x-groupflow-agent-secret");
+const envSecret = process.env.GROUPFLOW_AGENT_SECRET;
+
+console.log("HEADER =", headerSecret);
+console.log("ENV =", envSecret);
+
+if (headerSecret !== envSecret) {
+  return NextResponse.json(
+    {
+      error: "Unauthorized",
+      header: headerSecret,
+      env: envSecret,
+    },
+    { status: 401 }
+  );
+}
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
