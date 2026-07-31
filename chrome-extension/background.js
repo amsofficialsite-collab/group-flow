@@ -1,3 +1,5 @@
+console.log("===== GROUP FLOW BACKGROUND LOADED =====");
+
 const JOB_KEY = "groupflow_active_job";
 
 function arrayBufferToBase64(buffer) {
