@@ -1,0 +1,1 @@
+import AppShell from "@/components/AppShell";import ContentLibrary from "@/components/contents/ContentLibrary";export default function Page(){return <AppShell title="Content Library"><ContentLibrary/></AppShell>}

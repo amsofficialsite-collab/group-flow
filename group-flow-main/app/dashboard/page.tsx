@@ -1,0 +1,1 @@
+import AppShell from "@/components/AppShell";import LiveDashboard from "@/components/dashboard/LiveDashboard";export default function Page(){return <AppShell title="Dashboard"><LiveDashboard/></AppShell>}

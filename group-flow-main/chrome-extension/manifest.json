@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "GROUP FLOW Posting Agent V12.1",
+  "version": "1.2.1",
+  "description": "โพสต์ Facebook Group ต่อเนื่องหลายกลุ่ม พร้อมปลดงานค้างและบันทึกผลแบบทนทาน",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "notifications",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://www.facebook.com/*",
+    "https://facebook.com/*",
+    "https://*.supabase.co/*",
+    "https://*.vercel.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "GROUP FLOW Posting Agent",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.vercel.app/*",
+        "http://localhost:3000/*"
+      ],
+      "js": [
+        "app-bridge.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.facebook.com/*",
+        "https://facebook.com/*"
+      ],
+      "js": [
+        "facebook-poster.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
