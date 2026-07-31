@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "GROUP FLOW Posting Agent",
-  "version": "1.0.9",
+  "name": "GROUP FLOW Posting Agent V10",
+  "version": "1.0.10",
   "description": "เตรียมโพสต์ Facebook Group พร้อมรักษาบรรทัดข้อความและอัปโหลดหลายรูปภาพ",
   "permissions": [
     "storage",

@@ -178,36 +178,39 @@
     selection.addRange(range);
     document.execCommand("delete", false);
 
-    const lines = text.replace(/\r\n?/g, "\n").split("\n");
+    const escapeHtml = (value) => String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
 
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (line) {
-        document.execCommand("insertText", false, line);
-      }
-      if (index < lines.length - 1) {
-        // Facebook/Lexical preserves insertLineBreak better than a newline
-        // embedded inside one insertText command.
-        const insertedBreak = document.execCommand("insertLineBreak", false);
-        if (!insertedBreak) document.execCommand("insertParagraph", false);
+    const lines = text.replace(/\r\n?/g, "\n").split("\n");
+    const html = lines
+      .map((line) => line ? `<div>${escapeHtml(line)}</div>` : "<div><br></div>")
+      .join("");
+
+    const inserted = document.execCommand("insertHTML", false, html);
+
+    if (!inserted || !normalizeForCompare(editor.innerText || editor.textContent || "")) {
+      editor.replaceChildren();
+      for (const line of lines) {
+        const block = document.createElement("div");
+        if (line) block.textContent = line;
+        else block.appendChild(document.createElement("br"));
+        editor.appendChild(block);
       }
     }
 
-    editor.dispatchEvent(new InputEvent("beforeinput", {
-      bubbles: true,
-      composed: true,
-      inputType: "insertText",
-      data: null
-    }));
     editor.dispatchEvent(new InputEvent("input", {
       bubbles: true,
       composed: true,
-      inputType: "insertText",
-      data: null
+      inputType: "insertFromPaste",
+      data: text
     }));
     editor.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
 
-    await sleep(500);
+    await sleep(700);
     return text;
   }
 
@@ -318,31 +321,19 @@
     setStatus(`กำลังเพิ่มรูป ${files.length} รูป…`);
     await assignFiles(input, files);
 
-    let attached = countAttachedImages(getCreatePostDialog());
-
-    // If Facebook accepted only part of the FileList, append the remaining
-    // images one at a time and verify that the visible count increases.
-    for (let i = attached; i < files.length; i += 1) {
-      setStatus(`กำลังเพิ่มรูป ${i + 1}/${files.length}…`);
-      const before = countAttachedImages(getCreatePostDialog());
-      input = await getInput(true);
-      if (!input) throw new Error(`ไม่พบช่องอัปโหลดสำหรับรูปที่ ${i + 1}`);
-      await assignFiles(input, [files[i]]);
-      await waitFor(() => countAttachedImages(getCreatePostDialog()) > before, 15000, 400);
-      attached = countAttachedImages(getCreatePostDialog());
-    }
-
+    // Facebook may accept all files before all preview thumbnails appear.
+    // Do not append files again, otherwise duplicate photos are created.
     setStatus(`กำลังอัปโหลดรูป ${files.length} รูป…`);
+
     const ready = await waitFor(() => {
-      const count = countAttachedImages(getCreatePostDialog());
-      return count >= files.length ? count : null;
+      const dialogNow = getCreatePostDialog();
+      if (!dialogNow) return null;
+      return countAttachedImages(dialogNow) > 0 ? true : null;
     }, Math.max(60000, files.length * 20000), 500);
 
-    if (!ready) {
-      throw new Error(`Facebook แสดงรูปไม่ครบ (${countAttachedImages(getCreatePostDialog())}/${files.length} รูป)`);
-    }
+    if (!ready) throw new Error("Facebook ยังไม่แสดงตัวอย่างรูป");
 
-    await sleep(Math.max(3500, files.length * 1400));
+    await sleep(Math.max(4000, files.length * 1600));
   }
 
   function findPostButton() {
@@ -364,7 +355,7 @@
     panel.id = "groupflow-agent-panel";
     panel.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483647;width:360px;background:#10131a;color:white;border:1px solid #3b82f6;border-radius:16px;padding:16px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.45)";
     panel.innerHTML = `
-      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V9</div>
+      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V10</div>
       <div style="margin-top:6px;font-size:12px;color:#93c5fd">${job.groupName || "Facebook Group"}</div>
       <div id="gf-status" style="margin-top:10px;font-size:13px;line-height:1.5;color:#e2e8f0">กำลังเตรียมโพสต์…</div>
       <div style="display:flex;gap:8px;margin-top:14px">
@@ -419,7 +410,7 @@
         await sleep(1000);
         postButton.click();
         await sleep(4000);
-        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V9" });
+        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V10" });
         setStatus("ส่งคำสั่งโพสต์แล้ว และบันทึกผลกลับ GROUP FLOW แล้ว");
       } else {
         setStatus("เตรียมโพสต์เรียบร้อย กรุณาตรวจสอบแล้วกดปุ่มด้านล่าง");
@@ -430,7 +421,7 @@
           latestButton.click();
           setStatus("กำลังโพสต์…");
           await sleep(4000);
-          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V9" });
+          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V10" });
         };
       }
     } catch (error) {
