@@ -1,10 +1,17 @@
-GROUP FLOW Posting Agent V7 FIXED
+GROUP FLOW Posting Agent V8 (เวอร์ชัน 1.0.8)
 
-1) เข้า chrome://extensions
-2) Remove ตัวเดิม
-3) เปิด Developer mode
-4) กด Load unpacked
-5) เลือกโฟลเดอร์ group-flow-extension-v5-fixed
-6) ปิดแท็บ Facebook เก่า แล้วส่งงานใหม่จาก GROUP FLOW
+วิธีติดตั้ง
+1. แตกไฟล์ ZIP นี้ก่อน
+2. เปิด Chrome แล้วไปที่ chrome://extensions
+3. ลบหรือปิด GROUP FLOW Posting Agent เวอร์ชันเดิม
+4. เปิดโหมดนักพัฒนาซอฟต์แวร์ (Developer mode)
+5. กด โหลดส่วนขยายที่คลายการบีบอัด (Load unpacked)
+6. เลือกโฟลเดอร์ group-flow-extension-v8-linebreak
+7. ตรวจว่า Version เป็น 1.0.8
+8. ปิดแท็บ Facebook เดิมทั้งหมด แล้วเปิด GROUP FLOW ใหม่
+9. ทดสอบด้วยปุ่ม Agent: ตรวจสอบก่อน
 
-กล่องบน Facebook ต้องขึ้น GROUP FLOW Posting Agent V7
+สิ่งที่แก้ใน V8
+- ใส่ข้อความทีละบรรทัด เพื่อไม่ให้ Facebook รวมข้อความติดกัน
+- รักษาบรรทัดว่างและหัวข้อให้ใกล้เคียงต้นฉบับ
+- รองรับหลายรูปจาก imageUrls เหมือน V7
