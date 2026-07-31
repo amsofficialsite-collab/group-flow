@@ -70,18 +70,53 @@ function getImageUrls(content: Content | null | undefined): string[] {
 }
 
 function formatFacebookCaption(rawText: string): string {
-  return rawText
-    .replace(/\r\n/g, "\n")
+  let text = String(rawText || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\uFFFD/g, "")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+
+  const sectionHeaders = [
+    "‼️ ประกาศรับสมัครพนักงาน ‼️",
+    "✏️ รายละเอียดงาน",
+    "🏢 สถานที่ทำงาน",
+    "💐 คุณสมบัติของผู้สมัคร",
+    "🌈 สวัสดิการ",
+    "🙋🏻‍♀️ ติดต่อสอบถามได้ที่",
+    "📥 ลิงก์สำหรับสมัครงาน",
+    "📥 ลิ้งค์สำหรับสมัครงาน",
+    "หมายเหตุ:",
+  ];
+
+  for (const header of sectionHeaders) {
+    text = text.split(header).join(`\n\n${header}\n`);
+  }
+
+  // แยกรายการที่ขึ้นต้นด้วย Emoji ให้เป็นคนละบรรทัด
+  text = text.replace(
+    /(?<!^)(?=(?:✨|🎯|📞|📊|⏰|🏥|🏦|🌴|🎉|✈️|🍚|🥪|☎️|✅|🔹|▪️|•))/gu,
+    "\n",
+  );
+
+  // แยกข้อมูลติดต่อและ URL
+  text = text
+    .replace(/\s+(Line\s*:)/gi, "\n$1")
+    .replace(/\s+(FB\s*:)/gi, "\n$1")
+    .replace(/\s+(☎️)/gu, "\n$1")
+    .replace(/\s+(https?:\/\/)/gi, "\n$1")
+    .replace(/\s+(#\S+)/g, "\n\n$1");
+
+  // แยกประโยคงานที่มักติดกัน
+  text = text
+    .replace(/(ผิดนัดชำระ)\s+(ติดตาม)/g, "$1\n$2")
+    .replace(/(หลังแจ้งค่างวด)\s+(บริการ)/g, "$1\n$2")
+    .replace(/(ทาวเวอร์ 2)\s*(สามารถลง)/g, "$1\n$2")
+    .replace(/(วันจันทร์\))\s*(โครงการ)/g, "$1\n$2")
+    .replace(/(บริษัท)\s*(🙋🏻‍♀️)/gu, "$1\n\n$2");
+
+  return text
     .replace(/[ \t]+\n/g, "\n")
-    .replace(/‼️\s*ประกาศ\s*รับสมัครพนักงาน\s*‼️/g, "‼️ ประกาศรับสมัครพนักงาน ‼️")
-    .replace(/✏️\s*รายละเอียดงาน/g, "\n\n✏️ รายละเอียดงาน\n")
-    .replace(/🏢\s*สถานที่ทำงาน/g, "\n\n🏢 สถานที่ทำงาน\n")
-    .replace(/💐\s*คุณสมบัติของผู้สมัคร/g, "\n\n💐 คุณสมบัติของผู้สมัคร\n")
-    .replace(/🌈\s*สวัสดิการ/g, "\n\n🌈 สวัสดิการ\n")
-    .replace(/🙋🏻‍♀️\s*ติดต่อสอบถามได้ที่/g, "\n\n🙋🏻‍♀️ ติดต่อสอบถามได้ที่\n")
-    .replace(/📥\s*ลิ้งค์สำหรับสมัครงาน/g, "\n\n📥 ลิงก์สำหรับสมัครงาน\n")
-    .replace(/📥\s*ลิงก์สำหรับสมัครงาน/g, "\n\n📥 ลิงก์สำหรับสมัครงาน\n")
-    .replace(/([✨📞📊])\s*/gu, "\n$1 ")
+    .replace(/\n[ \t]+/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
