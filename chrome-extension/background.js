@@ -64,3 +64,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create("GROUPFLOW_SCHEDULER", {
+        periodInMinutes: 1
+    });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+    chrome.alarms.create("GROUPFLOW_SCHEDULER", {
+        periodInMinutes: 1
+    });
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+
+    if (alarm.name !== "GROUPFLOW_SCHEDULER")
+        return;
+
+    await checkScheduledQueue();
+
+});
