@@ -3,18 +3,12 @@
   "name": "GROUP FLOW Posting Agent V10",
   "version": "1.0.10",
   "description": "เตรียมโพสต์ Facebook Group พร้อมรักษาบรรทัดข้อความและอัปโหลดหลายรูปภาพ",
- "permissions": [
+  "permissions": [
   "storage",
   "tabs",
   "scripting",
   "notifications",
   "alarms"
-],
-"host_permissions": [
-  "https://www.facebook.com/*",
-  "https://facebook.com/*",
-  "https://*.supabase.co/*",
-  "https://*.vercel.app/*"
 ],
   "host_permissions": [
     "https://www.facebook.com/*",
