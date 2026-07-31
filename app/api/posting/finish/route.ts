@@ -76,8 +76,15 @@ export async function POST(request: NextRequest) {
     posted_at: now,
   });
 
+  // การอัปเดต queue_items คือผลหลักของงาน
+  // หาก posting_logs บันทึกไม่ได้ ห้ามตอบ 500 เพราะ Extension จะคิดว่างานยังไม่จบ
+  // และอาจค้างอยู่ที่กลุ่มเดิมได้
   if (logError) {
-    return NextResponse.json({ error: logError.message }, { status: 500 });
+    console.error("[GROUP FLOW] posting_logs insert failed:", logError.message);
+    return NextResponse.json({
+      ok: true,
+      warning: `Queue updated, but posting log failed: ${logError.message}`,
+    });
   }
 
   return NextResponse.json({ ok: true });
