@@ -167,7 +167,7 @@
       .trim();
   }
 
-  function replaceEditorText(editor, rawText) {
+  async function replaceEditorText(editor, rawText) {
     const text = formatCaption(rawText);
     editor.focus();
 
@@ -176,23 +176,38 @@
     range.selectNodeContents(editor);
     selection.removeAllRanges();
     selection.addRange(range);
-
     document.execCommand("delete", false);
 
-    const lines=text.split("\n");
-    let ok=true;
-    for(let i=0;i<lines.length;i++){
-      if(lines[i]){
-        ok=document.execCommand("insertText",false,lines[i]) && ok;
+    const lines = text.replace(/\r\n?/g, "\n").split("\n");
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (line) {
+        document.execCommand("insertText", false, line);
       }
-      if(i<lines.length-1){
-        document.execCommand("insertParagraph",false);
+      if (index < lines.length - 1) {
+        // Facebook/Lexical preserves insertLineBreak better than a newline
+        // embedded inside one insertText command.
+        const insertedBreak = document.execCommand("insertLineBreak", false);
+        if (!insertedBreak) document.execCommand("insertParagraph", false);
       }
     }
-    editor.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText"}));
-    if(!ok){
-      console.warn("insertText fallback used");
-    }
+
+    editor.dispatchEvent(new InputEvent("beforeinput", {
+      bubbles: true,
+      composed: true,
+      inputType: "insertText",
+      data: null
+    }));
+    editor.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      composed: true,
+      inputType: "insertText",
+      data: null
+    }));
+    editor.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+
+    await sleep(500);
     return text;
   }
 
@@ -242,6 +257,20 @@
     return null;
   }
 
+  function countAttachedImages(dialog = getCreatePostDialog()) {
+    if (!dialog) return 0;
+    const imageCount = [...dialog.querySelectorAll("img")].filter((img) => {
+      const src = img.currentSrc || img.src || "";
+      const rect = img.getBoundingClientRect();
+      return visible(img) && src && rect.width >= 60 && rect.height >= 60;
+    }).length;
+    const removeCount = [...dialog.querySelectorAll('[aria-label], [role="button"]')].filter((el) => {
+      const label = `${el.getAttribute("aria-label") || ""} ${textOf(el)}`.toLowerCase();
+      return visible(el) && (label.includes("ลบรูป") || label.includes("remove photo") || label.includes("remove image"));
+    }).length;
+    return Math.max(imageCount, removeCount);
+  }
+
   async function attachImages(imageUrls, setStatus) {
     if (!imageUrls.length) return;
 
@@ -260,64 +289,60 @@
         return combined.includes("รูปภาพ/วิดีโอ") || combined.includes("รูปภาพ") || combined.includes("photo/video") || combined.includes("photo");
       });
 
-    async function getInput() {
+    async function getInput(forceOpen = false) {
       let input = findImageInput(dialog);
-      if (!input && photoButton) {
+      if ((!input || forceOpen) && photoButton) {
         photoButton.click();
         await sleep(700);
-        input = await waitFor(() => findImageInput(dialog), 12000);
+        input = await waitFor(() => findImageInput(getCreatePostDialog()), 12000);
       }
       return input;
     }
 
     async function assignFiles(input, selectedFiles) {
+      input.setAttribute("multiple", "");
+      input.multiple = true;
       const transfer = new DataTransfer();
       selectedFiles.forEach((file) => transfer.items.add(file));
-      const filesSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files")?.set;
-      if (filesSetter) filesSetter.call(input, transfer.files);
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files")?.set;
+      if (setter) setter.call(input, transfer.files);
       else Object.defineProperty(input, "files", { value: transfer.files, configurable: true });
       input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
       input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-      return input.files?.length || 0;
+      await sleep(1800);
     }
 
-    let input = await getInput();
+    let input = await getInput(true);
     if (!input) throw new Error("ไม่พบช่องอัปโหลดรูปของ Facebook");
 
-    // First try sending every image in one selection.
-    let accepted = await assignFiles(input, files);
+    setStatus(`กำลังเพิ่มรูป ${files.length} รูป…`);
+    await assignFiles(input, files);
 
-    // Some Facebook layouts expose a single-file input. In that case, add images one-by-one.
-    if (accepted < files.length && files.length > 1) {
-      for (let i = accepted; i < files.length; i += 1) {
-        setStatus(`กำลังเพิ่มรูป ${i + 1}/${files.length}…`);
-        input = await getInput();
-        if (!input) throw new Error(`ไม่พบช่องอัปโหลดสำหรับรูปที่ ${i + 1}`);
-        const count = await assignFiles(input, [files[i]]);
-        if (count < 1) throw new Error(`Facebook ไม่รับรูปที่ ${i + 1}`);
-        await sleep(1200);
-      }
+    let attached = countAttachedImages(getCreatePostDialog());
+
+    // If Facebook accepted only part of the FileList, append the remaining
+    // images one at a time and verify that the visible count increases.
+    for (let i = attached; i < files.length; i += 1) {
+      setStatus(`กำลังเพิ่มรูป ${i + 1}/${files.length}…`);
+      const before = countAttachedImages(getCreatePostDialog());
+      input = await getInput(true);
+      if (!input) throw new Error(`ไม่พบช่องอัปโหลดสำหรับรูปที่ ${i + 1}`);
+      await assignFiles(input, [files[i]]);
+      await waitFor(() => countAttachedImages(getCreatePostDialog()) > before, 15000, 400);
+      attached = countAttachedImages(getCreatePostDialog());
     }
 
     setStatus(`กำลังอัปโหลดรูป ${files.length} รูป…`);
+    const ready = await waitFor(() => {
+      const count = countAttachedImages(getCreatePostDialog());
+      return count >= files.length ? count : null;
+    }, Math.max(60000, files.length * 20000), 500);
 
-    // Require at least the requested number of visible previews where possible.
-    const previewReady = await waitFor(() => {
-      const currentDialog = getCreatePostDialog();
-      if (!currentDialog) return null;
-      const images = [...currentDialog.querySelectorAll('img')].filter((img) => {
-        const src = img.currentSrc || img.src || "";
-        const rect = img.getBoundingClientRect();
-        return src && rect.width >= 70 && rect.height >= 70;
-      });
-      return images.length >= files.length ? images : null;
-    }, Math.max(45000, files.length * 15000), 500);
-
-    if (!previewReady) {
-      throw new Error(`Facebook แสดงรูปไม่ครบ กรุณาตรวจสอบ (${files.length} รูป)`);
+    if (!ready) {
+      throw new Error(`Facebook แสดงรูปไม่ครบ (${countAttachedImages(getCreatePostDialog())}/${files.length} รูป)`);
     }
 
-    await sleep(Math.max(3000, files.length * 1200));
+    await sleep(Math.max(3500, files.length * 1400));
   }
 
   function findPostButton() {
@@ -339,7 +364,7 @@
     panel.id = "groupflow-agent-panel";
     panel.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483647;width:360px;background:#10131a;color:white;border:1px solid #3b82f6;border-radius:16px;padding:16px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.45)";
     panel.innerHTML = `
-      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V7</div>
+      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V9</div>
       <div style="margin-top:6px;font-size:12px;color:#93c5fd">${job.groupName || "Facebook Group"}</div>
       <div id="gf-status" style="margin-top:10px;font-size:13px;line-height:1.5;color:#e2e8f0">กำลังเตรียมโพสต์…</div>
       <div style="display:flex;gap:8px;margin-top:14px">
@@ -375,7 +400,7 @@
       if (!editor) throw new Error("ไม่พบช่องเขียนข้อความในหน้าต่างสร้างโพสต์");
 
       setStatus("กำลังใส่ข้อความ…");
-      const finalCaption = replaceEditorText(editor, job.caption || "");
+      const finalCaption = await replaceEditorText(editor, job.caption || "");
       await sleep(1200);
 
       const expected = normalizeForCompare(finalCaption).slice(0, 15);
@@ -394,7 +419,7 @@
         await sleep(1000);
         postButton.click();
         await sleep(4000);
-        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V7" });
+        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V9" });
         setStatus("ส่งคำสั่งโพสต์แล้ว และบันทึกผลกลับ GROUP FLOW แล้ว");
       } else {
         setStatus("เตรียมโพสต์เรียบร้อย กรุณาตรวจสอบแล้วกดปุ่มด้านล่าง");
@@ -405,7 +430,7 @@
           latestButton.click();
           setStatus("กำลังโพสต์…");
           await sleep(4000);
-          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V7" });
+          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V9" });
         };
       }
     } catch (error) {

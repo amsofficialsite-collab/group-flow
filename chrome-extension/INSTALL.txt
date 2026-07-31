@@ -1,10 +1,7 @@
-GROUP FLOW Posting Agent V7 FIXED
-
-1) เข้า chrome://extensions
-2) Remove ตัวเดิม
-3) เปิด Developer mode
-4) กด Load unpacked
-5) เลือกโฟลเดอร์ group-flow-extension-v5-fixed
-6) ปิดแท็บ Facebook เก่า แล้วส่งงานใหม่จาก GROUP FLOW
-
-กล่องบน Facebook ต้องขึ้น GROUP FLOW Posting Agent V7
+GROUP FLOW Posting Agent V9 (1.0.9)
+1. แตกไฟล์ ZIP
+2. เปิด chrome://extensions
+3. เปิดโหมดนักพัฒนาซอฟต์แวร์
+4. ลบหรือปิดเวอร์ชันเดิม
+5. กด Load unpacked และเลือกโฟลเดอร์นี้
+6. ปิดแท็บ Facebook เดิมทั้งหมด แล้วทดสอบ Agent: ตรวจสอบก่อน
