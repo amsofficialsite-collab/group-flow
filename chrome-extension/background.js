@@ -64,3 +64,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+const SCHEDULER_ALARM_NAME = "GROUPFLOW_SCHEDULER";
+
+async function ensureSchedulerAlarm() {
+  const existingAlarm = await chrome.alarms.get(SCHEDULER_ALARM_NAME);
+
+  if (!existingAlarm) {
+    await chrome.alarms.create(SCHEDULER_ALARM_NAME, {
+      delayInMinutes: 0.1,
+      periodInMinutes: 1,
+    });
+
+    console.log("[GROUP FLOW] สร้าง Scheduler สำเร็จ");
+  } else {
+    console.log("[GROUP FLOW] Scheduler ทำงานอยู่แล้ว");
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  void ensureSchedulerAlarm();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void ensureSchedulerAlarm();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== SCHEDULER_ALARM_NAME) return;
+
+  console.log(
+    "[GROUP FLOW] Scheduler ตรวจสอบคิว:",
+    new Date().toLocaleString("th-TH"),
+  );
+});
+
+// สร้าง Alarm ใหม่อัตโนมัติ หาก Service Worker ถูกเปิดขึ้นมา
+void ensureSchedulerAlarm();
