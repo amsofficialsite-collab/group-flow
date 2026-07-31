@@ -167,7 +167,7 @@
       .trim();
   }
 
-  async function replaceEditorText(editor, rawText) {
+  function replaceEditorText(editor, rawText) {
     const text = formatCaption(rawText);
     editor.focus();
 
@@ -176,41 +176,23 @@
     range.selectNodeContents(editor);
     selection.removeAllRanges();
     selection.addRange(range);
+
     document.execCommand("delete", false);
 
-    // Facebook มักยุบการขึ้นบรรทัดเมื่อส่งข้อความทั้งก้อนด้วย insertText
-    // จึงแยกพิมพ์ทีละบรรทัดและสั่ง line break จริงใน contenteditable
-    const lines = text.split("\n");
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (line) {
-        const inserted = document.execCommand("insertText", false, line);
-        if (!inserted) {
-          throw new Error(`Facebook ไม่รับข้อความบรรทัดที่ ${index + 1}`);
-        }
+    const lines=text.split("\n");
+    let ok=true;
+    for(let i=0;i<lines.length;i++){
+      if(lines[i]){
+        ok=document.execCommand("insertText",false,lines[i]) && ok;
       }
-
-      if (index < lines.length - 1) {
-        const brokeLine =
-          document.execCommand("insertLineBreak", false) ||
-          document.execCommand("insertParagraph", false);
-        if (!brokeLine) {
-          throw new Error(`Facebook ไม่รับคำสั่งขึ้นบรรทัดใหม่ที่ ${index + 1}`);
-        }
+      if(i<lines.length-1){
+        document.execCommand("insertParagraph",false);
       }
-
-      // เว้นจังหวะเล็กน้อยให้ React/Facebook บันทึกแต่ละบรรทัดทัน
-      if (index > 0 && index % 12 === 0) await sleep(25);
     }
-
-    editor.dispatchEvent(new InputEvent("input", {
-      bubbles: true,
-      composed: true,
-      inputType: "insertText",
-      data: null
-    }));
-    editor.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-
+    editor.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText"}));
+    if(!ok){
+      console.warn("insertText fallback used");
+    }
     return text;
   }
 
@@ -357,7 +339,7 @@
     panel.id = "groupflow-agent-panel";
     panel.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483647;width:360px;background:#10131a;color:white;border:1px solid #3b82f6;border-radius:16px;padding:16px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.45)";
     panel.innerHTML = `
-      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V8</div>
+      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V7</div>
       <div style="margin-top:6px;font-size:12px;color:#93c5fd">${job.groupName || "Facebook Group"}</div>
       <div id="gf-status" style="margin-top:10px;font-size:13px;line-height:1.5;color:#e2e8f0">กำลังเตรียมโพสต์…</div>
       <div style="display:flex;gap:8px;margin-top:14px">
@@ -393,21 +375,12 @@
       if (!editor) throw new Error("ไม่พบช่องเขียนข้อความในหน้าต่างสร้างโพสต์");
 
       setStatus("กำลังใส่ข้อความ…");
-      const finalCaption = await replaceEditorText(editor, job.caption || "");
+      const finalCaption = replaceEditorText(editor, job.caption || "");
       await sleep(1200);
 
-      const editorText = editor.innerText || editor.textContent || "";
       const expected = normalizeForCompare(finalCaption).slice(0, 15);
-      const actual = normalizeForCompare(editorText);
-      if (expected && !actual.includes(expected)) {
-        throw new Error("Facebook ไม่รับข้อความอัตโนมัติ");
-      }
-
-      const expectedBreaks = (finalCaption.match(/\n/g) || []).length;
-      const actualBreaks = (editorText.match(/\n/g) || []).length;
-      if (expectedBreaks >= 2 && actualBreaks === 0) {
-        throw new Error("Facebook ไม่รับการขึ้นบรรทัด กรุณาลองใหม่อีกครั้ง");
-      }
+      const actual = normalizeForCompare(editor.innerText || editor.textContent || "");
+      if (expected && !actual.includes(expected)) throw new Error("Facebook ไม่รับข้อความอัตโนมัติ");
 
       const imageUrls = normalizeImageUrls(job);
       if (imageUrls.length) await attachImages(imageUrls, setStatus);
@@ -421,7 +394,7 @@
         await sleep(1000);
         postButton.click();
         await sleep(4000);
-        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V8" });
+        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V7" });
         setStatus("ส่งคำสั่งโพสต์แล้ว และบันทึกผลกลับ GROUP FLOW แล้ว");
       } else {
         setStatus("เตรียมโพสต์เรียบร้อย กรุณาตรวจสอบแล้วกดปุ่มด้านล่าง");
@@ -432,7 +405,7 @@
           latestButton.click();
           setStatus("กำลังโพสต์…");
           await sleep(4000);
-          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V8" });
+          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V7" });
         };
       }
     } catch (error) {
