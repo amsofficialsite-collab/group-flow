@@ -12,6 +12,7 @@ import {
   Puzzle,
   Send,
   Trash2,
+  Clock3,
   X,
 } from "lucide-react";
 import { createBrowserClient } from "@supabase/ssr";
@@ -39,7 +40,7 @@ type Content = {
 type QueueRow = {
   id: string;
   scheduled_at: string;
-  status: "pending" | "posted" | "failed" | "skipped";
+  status: "pending" | "posting" | "posted" | "failed" | "skipped";
   groups: Group | null;
   content_items: Content | null;
 };
@@ -50,6 +51,33 @@ type PostingResultDetail = {
   postUrl?: string;
   notes?: string;
 };
+
+const WEEKDAYS = [
+  { value: 1, label: "จันทร์" },
+  { value: 2, label: "อังคาร" },
+  { value: 3, label: "พุธ" },
+  { value: 4, label: "พฤหัสบดี" },
+  { value: 5, label: "ศุกร์" },
+  { value: 6, label: "เสาร์" },
+  { value: 0, label: "อาทิตย์" },
+] as const;
+
+function toDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function dateFromLocalInputs(dateValue: string, timeValue: string): Date | null {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const [hour, minute] = timeValue.split(":").map(Number);
+
+  if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
+
+  const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 function getImageUrls(content: Content | null | undefined): string[] {
   if (!content) return [];
@@ -139,7 +167,18 @@ export default function DailyQueue() {
   const [assistant, setAssistant] = useState<QueueRow | null>(null);
   const [groupId, setGroupId] = useState("");
   const [contentId, setContentId] = useState("");
+  const today = useMemo(() => new Date(), []);
+  const nextWeek = useMemo(() => {
+    const date = new Date();
+    date.setDate(date.getDate() + 7);
+    return date;
+  }, []);
+  const [scheduleMode, setScheduleMode] = useState<"single" | "multiple">("single");
   const [when, setWhen] = useState("");
+  const [startDate, setStartDate] = useState(toDateInputValue(today));
+  const [endDate, setEndDate] = useState(toDateInputValue(nextWeek));
+  const [selectedDays, setSelectedDays] = useState<number[]>([today.getDay()]);
+  const [times, setTimes] = useState<string[]>(["09:00"]);
   const [postUrl, setPostUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -244,29 +283,151 @@ export default function DailyQueue() {
       );
   }, [rows, supabase]);
 
-  async function add() {
-    if (!groupId || !contentId || !when) {
-      alert("เลือกกลุ่ม คอนเทนต์ และวันเวลาให้ครบค่ะ");
-      return;
-    }
+  function resetScheduleForm() {
+    const now = new Date();
+    const weekLater = new Date();
+    weekLater.setDate(weekLater.getDate() + 7);
 
-    const { error } = await supabase.from("queue_items").insert({
-      group_id: groupId,
-      content_id: contentId,
-      scheduled_at: new Date(when).toISOString(),
-      status: "pending",
-    });
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    setOpen(false);
     setGroupId("");
     setContentId("");
     setWhen("");
-    await load();
+    setScheduleMode("single");
+    setStartDate(toDateInputValue(now));
+    setEndDate(toDateInputValue(weekLater));
+    setSelectedDays([now.getDay()]);
+    setTimes(["09:00"]);
+  }
+
+  function toggleDay(day: number) {
+    setSelectedDays((current) =>
+      current.includes(day)
+        ? current.filter((value) => value !== day)
+        : [...current, day],
+    );
+  }
+
+  function addTime() {
+    setTimes((current) => [...current, "12:00"]);
+  }
+
+  function updateTime(index: number, value: string) {
+    setTimes((current) =>
+      current.map((time, timeIndex) => (timeIndex === index ? value : time)),
+    );
+  }
+
+  function removeTime(index: number) {
+    setTimes((current) =>
+      current.length === 1
+        ? current
+        : current.filter((_, timeIndex) => timeIndex !== index),
+    );
+  }
+
+  async function add() {
+    if (!groupId || !contentId) {
+      alert("เลือกกลุ่มและคอนเทนต์ให้ครบค่ะ");
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      if (scheduleMode === "single") {
+        if (!when) {
+          alert("เลือกวันและเวลาโพสต์ค่ะ");
+          return;
+        }
+
+        const scheduledDate = new Date(when);
+        if (Number.isNaN(scheduledDate.getTime())) {
+          alert("วันและเวลาไม่ถูกต้องค่ะ");
+          return;
+        }
+
+        const { error } = await supabase.from("queue_items").insert({
+          group_id: groupId,
+          content_id: contentId,
+          scheduled_at: scheduledDate.toISOString(),
+          status: "pending",
+        });
+
+        if (error) throw error;
+        alert("เพิ่มคิวโพสต์เรียบร้อยแล้วค่ะ");
+      } else {
+        if (!startDate || !endDate) {
+          alert("เลือกวันที่เริ่มต้นและวันที่สิ้นสุดค่ะ");
+          return;
+        }
+
+        if (selectedDays.length === 0) {
+          alert("เลือกอย่างน้อย 1 วันค่ะ");
+          return;
+        }
+
+        const validTimes = Array.from(new Set<string>(times.filter((time) => Boolean(time)))).sort();
+        if (validTimes.length === 0) {
+          alert("เพิ่มอย่างน้อย 1 เวลาโพสต์ค่ะ");
+          return;
+        }
+
+        const start = dateFromLocalInputs(startDate, "00:00");
+        const end = dateFromLocalInputs(endDate, "23:59");
+        if (!start || !end || end < start) {
+          alert("ช่วงวันที่ไม่ถูกต้องค่ะ");
+          return;
+        }
+
+        const queueRows: Array<{
+          group_id: string;
+          content_id: string;
+          scheduled_at: string;
+          status: "pending";
+        }> = [];
+
+        const cursor = new Date(start);
+        while (cursor <= end) {
+          if (selectedDays.includes(cursor.getDay())) {
+            const dateValue = toDateInputValue(cursor);
+            for (const time of validTimes) {
+              const scheduledDate = dateFromLocalInputs(dateValue, time);
+              if (scheduledDate && scheduledDate >= new Date()) {
+                queueRows.push({
+                  group_id: groupId,
+                  content_id: contentId,
+                  scheduled_at: scheduledDate.toISOString(),
+                  status: "pending",
+                });
+              }
+            }
+          }
+          cursor.setDate(cursor.getDate() + 1);
+        }
+
+        if (queueRows.length === 0) {
+          alert("ไม่พบวันและเวลาที่ยังไม่ผ่านไปในช่วงที่เลือกค่ะ");
+          return;
+        }
+
+        if (queueRows.length > 300) {
+          alert(`รายการที่กำลังสร้างมี ${queueRows.length} คิว กรุณาลดช่วงวันที่หรือจำนวนเวลาลงให้ไม่เกิน 300 คิวค่ะ`);
+          return;
+        }
+
+        const { error } = await supabase.from("queue_items").insert(queueRows);
+        if (error) throw error;
+
+        alert(`สร้างคิวโพสต์เรียบร้อย ${queueRows.length} คิวค่ะ`);
+      }
+
+      setOpen(false);
+      resetScheduleForm();
+      await load();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "เพิ่มคิวไม่สำเร็จค่ะ");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function fullCaption(row: QueueRow) {
@@ -585,7 +746,7 @@ export default function DailyQueue() {
 
       {open && (
         <div className="modal">
-          <div className="modal-card">
+          <div className="modal-card max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between">
               <h2 className="text-xl font-bold">เพิ่มคิวโพสต์</h2>
               <button onClick={() => setOpen(false)}>
@@ -626,21 +787,126 @@ export default function DailyQueue() {
                 </select>
               </label>
 
-              <label>
-                วันและเวลา
-                <input
-                  className="input mt-1"
-                  type="datetime-local"
-                  value={when}
-                  onChange={(event) => setWhen(event.target.value)}
-                />
-              </label>
+              <div>
+                <p className="text-sm font-medium">รูปแบบการตั้งเวลา</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    className={scheduleMode === "single" ? "btn-primary justify-center" : "btn-ghost justify-center"}
+                    onClick={() => setScheduleMode("single")}
+                  >
+                    ครั้งเดียว
+                  </button>
+                  <button
+                    type="button"
+                    className={scheduleMode === "multiple" ? "btn-primary justify-center" : "btn-ghost justify-center"}
+                    onClick={() => setScheduleMode("multiple")}
+                  >
+                    หลายวัน/หลายเวลา
+                  </button>
+                </div>
+              </div>
+
+              {scheduleMode === "single" ? (
+                <label>
+                  วันและเวลา
+                  <input
+                    className="input mt-1"
+                    type="datetime-local"
+                    value={when}
+                    onChange={(event) => setWhen(event.target.value)}
+                  />
+                </label>
+              ) : (
+                <div className="space-y-4 rounded-xl border border-white/10 bg-white/[.025] p-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label>
+                      วันที่เริ่มต้น
+                      <input
+                        className="input mt-1"
+                        type="date"
+                        value={startDate}
+                        onChange={(event) => setStartDate(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      วันที่สิ้นสุด
+                      <input
+                        className="input mt-1"
+                        type="date"
+                        min={startDate}
+                        value={endDate}
+                        onChange={(event) => setEndDate(event.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium">เลือกวันที่ต้องการโพสต์</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {WEEKDAYS.map((day) => {
+                        const selected = selectedDays.includes(day.value);
+                        return (
+                          <button
+                            key={day.value}
+                            type="button"
+                            className={selected ? "btn-primary" : "btn-ghost"}
+                            onClick={() => toggleDay(day.value)}
+                          >
+                            {selected && <Check size={15} />}
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium">เวลาโพสต์</p>
+                      <button type="button" className="btn-ghost" onClick={addTime}>
+                        <Plus size={15} />
+                        เพิ่มเวลา
+                      </button>
+                    </div>
+
+                    <div className="mt-2 space-y-2">
+                      {times.map((time, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <Clock3 size={17} className="shrink-0 text-cyan-300" />
+                          <input
+                            className="input"
+                            type="time"
+                            value={time}
+                            onChange={(event) => updateTime(index, event.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="btn-danger"
+                            disabled={times.length === 1}
+                            onClick={() => removeTime(index)}
+                            aria-label={`ลบเวลา ${time}`}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className="text-xs leading-5 text-white/45">
+                    ระบบจะสร้างคิวทุกวันที่เลือก ตามเวลาทั้งหมดที่ระบุ ภายในช่วงวันที่เริ่มต้นถึงวันที่สิ้นสุด
+                  </p>
+                </div>
+              )}
 
               <button
+                disabled={busy}
                 className="btn-primary justify-center"
                 onClick={() => void add()}
               >
-                บันทึกเข้าคิว
+                {busy && <Loader2 size={17} className="animate-spin" />}
+                {scheduleMode === "single" ? "บันทึกเข้าคิว" : "สร้างคิวทั้งหมด"}
               </button>
             </div>
           </div>
