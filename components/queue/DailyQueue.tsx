@@ -21,6 +21,7 @@ type Group = {
   id: string;
   name: string;
   facebook_url: string | null;
+  posting_identity: string | null;
 };
 
 type ContentImage = {
@@ -188,7 +189,7 @@ export default function DailyQueue() {
     const [g, c, q] = await Promise.all([
       supabase
         .from("groups")
-        .select("id,name,facebook_url")
+        .select("id,name,facebook_url,posting_identity")
         .eq("active", true)
         .order("name"),
       supabase
@@ -201,7 +202,7 @@ export default function DailyQueue() {
       supabase
         .from("queue_items")
         .select(
-          "id,scheduled_at,status,groups(id,name,facebook_url),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
+          "id,scheduled_at,status,groups(id,name,facebook_url,posting_identity),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
         )
         .order("scheduled_at", { ascending: true }),
     ]);
@@ -533,6 +534,7 @@ export default function DailyQueue() {
       queueId: row.id,
       groupUrl: group.facebook_url,
       groupName: group.name,
+      postingIdentity: group.posting_identity || "",
       caption,
       imageUrls,
       imageCount: imageUrls.length,
@@ -545,6 +547,7 @@ export default function DailyQueue() {
           queueId: row.id,
           groupUrl: group.facebook_url,
           groupName: group.name,
+          postingIdentity: group.posting_identity || "",
           caption,
           imageUrls,
           autoPost,

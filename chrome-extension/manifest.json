@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "GROUP FLOW Posting Agent V11",
-  "version": "1.1.0",
-  "description": "โพสต์ Facebook Group ตามเวลาจาก GROUP FLOW โดยอัตโนมัติ",
+  "name": "GROUP FLOW Posting Agent V12.4",
+  "version": "1.0.14",
+  "description": "โพสต์ Facebook Group ตามเวลา รองรับหลายรูป จัดบรรทัด และเลือกโพสต์ในนามเพจ",
   "permissions": [
     "storage",
     "tabs",
@@ -29,7 +29,9 @@
         "https://*.vercel.app/*",
         "http://localhost:3000/*"
       ],
-      "js": ["app-bridge.js"],
+      "js": [
+        "app-bridge.js"
+      ],
       "run_at": "document_start"
     },
     {
@@ -37,7 +39,9 @@
         "https://www.facebook.com/*",
         "https://facebook.com/*"
       ],
-      "js": ["facebook-poster.js"],
+      "js": [
+        "facebook-poster.js"
+      ],
       "run_at": "document_idle"
     }
   ]

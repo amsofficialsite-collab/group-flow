@@ -167,6 +167,78 @@
       .trim();
   }
 
+  function normalizeIdentity(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function findIdentityControl(dialog) {
+    const roots = dialog ? [dialog, document] : [document];
+    const keywords = ["โพสต์ในนาม", "กำลังโพสต์ในนาม", "posting as", "post as", "switch profile", "เปลี่ยนโปรไฟล์"];
+
+    for (const root of roots) {
+      const candidates = [...root.querySelectorAll('button, [role="button"], [aria-label], [title], div[tabindex="0"]')].filter(visible);
+      const direct = candidates.find((el) => {
+        const combined = normalizeIdentity(`${textOf(el)} ${el.getAttribute("aria-label") || ""} ${el.getAttribute("title") || ""}`);
+        return keywords.some((keyword) => combined.includes(keyword));
+      });
+      if (direct) return direct;
+    }
+
+    if (dialog) {
+      const headerButtons = [...dialog.querySelectorAll('button, [role="button"], div[tabindex="0"]')].filter(visible);
+      return headerButtons.find((el) => {
+        const img = el.querySelector("img");
+        if (!img) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.top < window.innerHeight * 0.55 && rect.width <= 120;
+      }) || null;
+    }
+    return null;
+  }
+
+  function findIdentityOption(identity) {
+    const wanted = normalizeIdentity(identity);
+    if (!wanted) return null;
+    const roots = [...document.querySelectorAll('[role="dialog"], [role="menu"], [role="listbox"], [aria-modal="true"]'), document];
+
+    for (const root of roots) {
+      const candidates = [...root.querySelectorAll('[role="menuitem"], [role="option"], button, [role="button"], div[tabindex="0"]')].filter(visible);
+      const exact = candidates.find((el) => normalizeIdentity(textOf(el)) === wanted);
+      if (exact) return exact;
+      const contains = candidates.find((el) => {
+        const text = normalizeIdentity(textOf(el));
+        return text && (text.includes(wanted) || wanted.includes(text));
+      });
+      if (contains) return contains;
+    }
+    return null;
+  }
+
+  async function switchPostingIdentity(identity, setStatus) {
+    const wanted = String(identity || "").trim();
+    if (!wanted) return;
+
+    const dialog = getCreatePostDialog();
+    const control = findIdentityControl(dialog);
+    if (!control) {
+      throw new Error(`ไม่พบปุ่มสลับตัวตนสำหรับโพสต์ในนาม “${wanted}” กรุณาตรวจว่าเพจเป็นสมาชิกกลุ่มและกลุ่มอนุญาตให้เพจโพสต์`);
+    }
+
+    setStatus(`กำลังเลือกโพสต์ในนาม “${wanted}”…`);
+    control.click();
+    await sleep(900);
+
+    const option = await waitFor(() => findIdentityOption(wanted), 12000, 350);
+    if (!option) {
+      throw new Error(`ไม่พบเพจ “${wanted}” ในรายการตัวตนของ Facebook กรุณาใช้ชื่อเพจให้ตรงกับที่ Facebook แสดง`);
+    }
+
+    option.click();
+    await sleep(1200);
+    await waitFor(() => getCreatePostDialog(), 8000, 300);
+    setStatus(`เลือกโพสต์ในนาม “${wanted}” แล้ว`);
+  }
+
   async function replaceEditorText(editor, rawText) {
     const text = formatCaption(rawText);
     editor.focus();
@@ -355,7 +427,7 @@
     panel.id = "groupflow-agent-panel";
     panel.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483647;width:360px;background:#10131a;color:white;border:1px solid #3b82f6;border-radius:16px;padding:16px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.45)";
     panel.innerHTML = `
-      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V10</div>
+      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V12.4</div>
       <div style="margin-top:6px;font-size:12px;color:#93c5fd">${job.groupName || "Facebook Group"}</div>
       <div id="gf-status" style="margin-top:10px;font-size:13px;line-height:1.5;color:#e2e8f0">กำลังเตรียมโพสต์…</div>
       <div style="display:flex;gap:8px;margin-top:14px">
@@ -387,6 +459,11 @@
       }
       if (!dialog) throw new Error("เปิดหน้าต่างสร้างโพสต์ไม่สำเร็จ");
 
+      if (job.postingIdentity) {
+        await switchPostingIdentity(job.postingIdentity, setStatus);
+        dialog = getCreatePostDialog() || dialog;
+      }
+
       const editor = await waitFor(findEditor, 12000);
       if (!editor) throw new Error("ไม่พบช่องเขียนข้อความในหน้าต่างสร้างโพสต์");
 
@@ -410,7 +487,7 @@
         await sleep(1000);
         postButton.click();
         await sleep(4000);
-        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V10" });
+        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V12.4" });
         setStatus("ส่งคำสั่งโพสต์แล้ว และบันทึกผลกลับ GROUP FLOW แล้ว");
       } else {
         setStatus("เตรียมโพสต์เรียบร้อย กรุณาตรวจสอบแล้วกดปุ่มด้านล่าง");
@@ -421,7 +498,7 @@
           latestButton.click();
           setStatus("กำลังโพสต์…");
           await sleep(4000);
-          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V10" });
+          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V12.4" });
         };
       }
     } catch (error) {

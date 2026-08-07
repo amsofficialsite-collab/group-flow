@@ -56,22 +56,12 @@ function formatFacebookCaption(rawText: string): string {
 }
 
 export async function POST(request: NextRequest) {
- const headerSecret = request.headers.get("x-groupflow-agent-secret");
-const envSecret = process.env.GROUPFLOW_AGENT_SECRET;
-
-console.log("HEADER =", headerSecret);
-console.log("ENV =", envSecret);
-
-if (headerSecret !== envSecret) {
-  return NextResponse.json(
-    {
-      error: "Unauthorized",
-      header: headerSecret,
-      env: envSecret,
-    },
-    { status: 401 }
-  );
-}
+  if (
+    request.headers.get("x-groupflow-agent-secret") !==
+    process.env.GROUPFLOW_AGENT_SECRET
+  ) {
+    return unauthorized();
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -92,7 +82,7 @@ if (headerSecret !== envSecret) {
   const { data: candidates, error: selectError } = await supabase
     .from("queue_items")
     .select(
-      "id,scheduled_at,status,attempt_count,groups(id,name,facebook_url),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
+      "id,scheduled_at,status,attempt_count,groups(id,name,facebook_url,posting_identity),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
     )
     .eq("status", "pending")
     .lte("scheduled_at", now)
@@ -170,6 +160,7 @@ if (headerSecret !== envSecret) {
       queueId: row.id,
       groupUrl: group.facebook_url,
       groupName: group.name,
+      postingIdentity: group.posting_identity || "",
       caption: formatFacebookCaption(rawCaption),
       imageUrls,
       autoPost: true,

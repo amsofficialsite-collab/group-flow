@@ -18,6 +18,7 @@ type FacebookGroup = {
   id: string;
   name: string;
   facebook_url: string | null;
+  posting_identity: string | null;
   category: string | null;
   province: string | null;
   members: number;
@@ -30,6 +31,7 @@ type FacebookGroup = {
 type GroupForm = {
   name: string;
   facebook_url: string;
+  posting_identity: string;
   category: string;
   province: string;
   members: string;
@@ -40,6 +42,7 @@ type GroupForm = {
 const emptyForm: GroupForm = {
   name: "",
   facebook_url: "",
+  posting_identity: "",
   category: "",
   province: "",
   members: "0",
@@ -68,7 +71,7 @@ export default function GroupManager() {
     const [groupsResult, categoriesResult] = await Promise.all([
       supabase
         .from("groups")
-        .select("id,name,facebook_url,category,province,members,active,notes,created_at,updated_at")
+        .select("id,name,facebook_url,posting_identity,category,province,members,active,notes,created_at,updated_at")
         .order("created_at", { ascending: false }),
       supabase.from("group_categories").select("name").order("name"),
     ]);
@@ -116,6 +119,7 @@ export default function GroupManager() {
     setForm({
       name: group.name,
       facebook_url: group.facebook_url ?? "",
+      posting_identity: group.posting_identity ?? "",
       category: group.category ?? "",
       province: group.province ?? "",
       members: String(group.members ?? 0),
@@ -145,6 +149,7 @@ export default function GroupManager() {
     const payload = {
       name: form.name.trim(),
       facebook_url: form.facebook_url.trim() || null,
+      posting_identity: form.posting_identity.trim() || null,
       category: form.category.trim() || null,
       province: form.province.trim() || null,
       members: Math.max(0, Number.parseInt(form.members || "0", 10) || 0),
@@ -273,6 +278,9 @@ export default function GroupManager() {
                   <tr key={group.id} className="hover:bg-white/[0.025]">
                     <td className="px-5 py-4">
                       <div className="font-semibold">{group.name}</div>
+                      {group.posting_identity && (
+                        <p className="mt-1 text-xs text-indigo-600">โพสต์ในนาม: {group.posting_identity}</p>
+                      )}
                       {group.facebook_url && (
                         <a href={group.facebook_url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-cyan-300 hover:underline">
                           เปิดกลุ่ม <ExternalLink size={12} />
@@ -318,6 +326,17 @@ export default function GroupManager() {
               </Field>
               <Field label="Facebook Group URL">
                 <input value={form.facebook_url} onChange={(event) => setForm({ ...form, facebook_url: event.target.value })} className="form-input" placeholder="https://www.facebook.com/groups/..." type="url" />
+              </Field>
+              <Field label="โพสต์ในนาม (ไม่บังคับ)">
+                <input
+                  value={form.posting_identity}
+                  onChange={(event) => setForm({ ...form, posting_identity: event.target.value })}
+                  className="form-input"
+                  placeholder="ชื่อเพจตามที่ Facebook แสดง เช่น AMS Careers"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  เว้นว่างเพื่อใช้โปรไฟล์ปัจจุบัน หรือใส่ชื่อเพจที่เป็นสมาชิกกลุ่มนี้
+                </p>
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="หมวดหมู่">
