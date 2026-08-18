@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
   const { data: queueRow, error: queueError } = await supabase
     .from("queue_items")
-    .select("id,group_id,content_id,status,attempt_count")
+    .select("id,user_id,group_id,content_id,status,attempt_count")
     .eq("id", queueId)
     .maybeSingle();
 
@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { error: logError } = await supabase.from("posting_logs").insert({
+    user_id: queueRow.user_id,
     queue_id: queueId,
     group_id: queueRow.group_id,
     content_id: queueRow.content_id,

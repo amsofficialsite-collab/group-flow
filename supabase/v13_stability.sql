@@ -109,3 +109,21 @@ with check (auth.uid() = user_id);
 create index if not exists group_categories_name_idx on public.group_categories(name);
 
 notify pgrst, 'reload schema';
+
+-- ---------------------------------------------------------------------------
+-- V13.1 live dashboard / queue / history
+-- ---------------------------------------------------------------------------
+create index if not exists posting_logs_user_posted_idx on public.posting_logs(user_id, posted_at desc);
+create index if not exists queue_items_user_status_scheduled_idx on public.queue_items(user_id, status, scheduled_at);
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='queue_items') then
+    alter publication supabase_realtime add table public.queue_items;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='posting_logs') then
+    alter publication supabase_realtime add table public.posting_logs;
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';

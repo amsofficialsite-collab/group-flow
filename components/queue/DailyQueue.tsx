@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   CalendarClock,
   Check,
@@ -208,6 +208,7 @@ export default function DailyQueue() {
         .select(
           "id,scheduled_at,status,post_as,posting_identity,groups(*),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
         )
+        .in("status", ["pending", "posting"])
         .order("scheduled_at", { ascending: true }),
     ]);
 
@@ -223,7 +224,16 @@ export default function DailyQueue() {
 
   useEffect(() => {
     void load();
-  }, []);
+    const timer = window.setInterval(() => void load(), 15000);
+    const channel = supabase
+      .channel("v13-daily-queue-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "queue_items" }, () => void load())
+      .subscribe();
+    return () => {
+      window.clearInterval(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase]);
 
   useEffect(() => {
     const onResult = async (event: Event) => {
@@ -680,6 +690,20 @@ export default function DailyQueue() {
     }
   }
 
+  const nowForList = new Date();
+  const overdueRows = rows.filter((row) => new Date(row.scheduled_at) < nowForList && row.status === "pending");
+  const upcomingRows = rows.filter((row) => new Date(row.scheduled_at) >= nowForList || row.status === "posting");
+  const dateKey = (value: string) => new Date(value).toLocaleDateString("en-CA");
+  const dateLabel = (value: string) => {
+    const date = new Date(value);
+    const today = new Date(); today.setHours(0,0,0,0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+    const target = new Date(date); target.setHours(0,0,0,0);
+    if (target.getTime() === today.getTime()) return "วันนี้";
+    if (target.getTime() === tomorrow.getTime()) return "พรุ่งนี้";
+    return date.toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[.035] p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -700,15 +724,23 @@ export default function DailyQueue() {
         <div className="grid min-h-64 place-items-center">
           <Loader2 className="animate-spin" />
         </div>
-      ) : rows.length ? (
-        <div className="space-y-3">
-          {rows.map((row) => {
+      ) : upcomingRows.length || overdueRows.length ? (
+        <div className="space-y-6">
+          {overdueRows.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="font-bold text-amber-900">คิวตกค้าง • ต้องตรวจสอบ ({overdueRows.length})</p>
+              <p className="text-sm text-amber-700">คิวเหล่านี้เลยเวลาแล้วแต่ยังเป็น pending จึงแยกออกจาก Daily Queue หลัก</p>
+            </div>
+          )}
+          {upcomingRows.map((row, index) => {
             const imageUrls = getImageUrls(row.content_items);
             const previewUrl = imageUrls[0];
 
+            const showDay = index === 0 || dateKey(upcomingRows[index - 1].scheduled_at) !== dateKey(row.scheduled_at);
             return (
+              <Fragment key={row.id}>
+              {showDay && <div className="sticky top-0 z-10 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-black text-slate-800">{dateLabel(row.scheduled_at)}</div>}
               <div
-                key={row.id}
                 className="card flex flex-col gap-4 lg:flex-row lg:items-center"
               >
                 {previewUrl ? (
@@ -798,6 +830,7 @@ export default function DailyQueue() {
                   </button>
                 </div>
               </div>
+              </Fragment>
             );
           })}
         </div>
