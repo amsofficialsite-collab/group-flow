@@ -84,12 +84,82 @@
     }) || null;
   }
 
+  function composerText(el) {
+    return normalizeIdentity(`${textOf(el)} ${el?.getAttribute?.("aria-label") || ""} ${el?.getAttribute?.("title") || ""} ${el?.getAttribute?.("data-ad-preview") || ""}`);
+  }
+
+  function looksLikeComposerLauncher(el) {
+    if (!visible(el)) return false;
+    const text = composerText(el);
+    const keywords = [
+      "เขียนอะไร", "เขียนโพสต์", "สร้างโพสต์", "สร้างโพสต์สาธารณะ", "คุณกำลังคิดอะไร",
+      "โพสต์อะไรบางอย่าง", "เขียนบางอย่าง", "write something", "create post", "create a public post",
+      "what's on your mind", "whats on your mind", "post something"
+    ];
+    if (keywords.some((keyword) => text.includes(keyword))) return true;
+
+    // Facebook frequently renders the group composer as a textbox-looking div
+    // instead of a real button. Restrict this fallback to a reasonably sized
+    // visible element in the main page so we do not click navigation controls.
+    const role = el.getAttribute?.("role") || "";
+    const contenteditable = el.getAttribute?.("contenteditable") === "true";
+    const rect = el.getBoundingClientRect?.();
+    return Boolean((role === "textbox" || contenteditable) && rect && rect.width > 180 && rect.height > 20);
+  }
+
   function findComposerLauncher() {
-    const candidates = [...document.querySelectorAll('[role="button"], button, div[tabindex="0"]')].filter(visible);
-    return candidates.find((el) => {
-      const combined = `${textOf(el)} ${(el.getAttribute("aria-label") || "").toLowerCase()}`;
-      return combined.includes("เขียนอะไร") || combined.includes("สร้างโพสต์") || combined.includes("write something") || combined.includes("create post");
-    }) || null;
+    const selectors = [
+      '[role="button"]', 'button', 'div[tabindex="0"]',
+      '[role="textbox"]', '[contenteditable="true"]',
+      '[aria-label*="โพสต์"]', '[aria-label*="เขียน"]',
+      '[aria-label*="post" i]', '[aria-label*="write" i]'
+    ];
+    const candidates = [...new Set(selectors.flatMap((selector) => [...document.querySelectorAll(selector)]))]
+      .filter(visible);
+
+    const matched = candidates.filter(looksLikeComposerLauncher);
+    if (!matched.length) return null;
+
+    // Prefer controls in the center/main content area and avoid header/sidebar.
+    return matched.sort((a, b) => {
+      const ar = a.getBoundingClientRect();
+      const br = b.getBoundingClientRect();
+      const as = (ar.top > 80 ? 2 : 0) + (ar.left > window.innerWidth * .12 ? 1 : 0) + Math.min(ar.width, 500) / 500;
+      const bs = (br.top > 80 ? 2 : 0) + (br.left > window.innerWidth * .12 ? 1 : 0) + Math.min(br.width, 500) / 500;
+      return bs - as;
+    })[0] || null;
+  }
+
+  async function openComposer(setStatus) {
+    let dialog = getCreatePostDialog();
+    if (dialog) return dialog;
+
+    const launcher = await waitFor(findComposerLauncher, 30000, 300);
+    if (!launcher) {
+      throw new Error("ไม่พบช่องสร้างโพสต์ในกลุ่มนี้ — ตรวจว่า Facebook Account/เพจนี้เป็นสมาชิกกลุ่มและมีสิทธิ์โพสต์");
+    }
+
+    setStatus("พบช่องสร้างโพสต์แล้ว กำลังเปิด…");
+    launcher.scrollIntoView?.({ block: "center", inline: "center" });
+    await sleep(300);
+    launcher.click();
+
+    dialog = await waitFor(getCreatePostDialog, 12000, 250);
+    if (dialog) return dialog;
+
+    // React/Facebook sometimes ignores a synthetic click on the nested node.
+    // Retry on the closest clickable ancestor and then use mouse events.
+    const clickable = launcher.closest?.('[role="button"],button,[tabindex="0"]') || launcher;
+    try { clickable.focus?.(); } catch (_) {}
+    for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
+      try { clickable.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window })); } catch (_) {}
+    }
+
+    dialog = await waitFor(getCreatePostDialog, 10000, 250);
+    if (!dialog) {
+      throw new Error("Facebook ไม่เปิดหน้าต่างสร้างโพสต์หลังคลิก — อาจเป็นเพราะสิทธิ์ของ Profile/Page ในกลุ่ม หรือ Facebook เปลี่ยนหน้าตา");
+    }
+    return dialog;
   }
 
   function findEditor() {
@@ -427,7 +497,7 @@
     panel.id = "groupflow-agent-panel";
     panel.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483647;width:360px;background:#10131a;color:white;border:1px solid #3b82f6;border-radius:16px;padding:16px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.45)";
     panel.innerHTML = `
-      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V13</div>
+      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V13.4</div>
       <div style="margin-top:6px;font-size:12px;color:#93c5fd">${job.groupName || "Facebook Group"}</div>
       <div id="gf-status" style="margin-top:10px;font-size:13px;line-height:1.5;color:#e2e8f0">กำลังเตรียมโพสต์…</div>
       <div style="display:flex;gap:8px;margin-top:14px">
@@ -449,15 +519,8 @@
     const setStatus = (message) => { status.textContent = message; };
 
     try {
-      setStatus("กำลังเปิดหน้าสร้างโพสต์…");
-      let dialog = getCreatePostDialog();
-      if (!dialog) {
-        const launcher = await waitFor(findComposerLauncher, 25000);
-        if (!launcher) throw new Error("ไม่พบปุ่มสร้างโพสต์ในกลุ่มนี้");
-        launcher.click();
-        dialog = await waitFor(getCreatePostDialog, 15000);
-      }
-      if (!dialog) throw new Error("เปิดหน้าต่างสร้างโพสต์ไม่สำเร็จ");
+      setStatus("กำลังค้นหาช่องสร้างโพสต์ของ Facebook…");
+      let dialog = await openComposer(setStatus);
 
       if (job.postingIdentity) {
         await switchPostingIdentity(job.postingIdentity, setStatus);
@@ -487,7 +550,7 @@
         await sleep(1000);
         postButton.click();
         await sleep(4000);
-        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V13" });
+        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V13.4" });
         setStatus("ส่งคำสั่งโพสต์แล้ว และบันทึกผลกลับ GROUP FLOW แล้ว");
       } else {
         setStatus("เตรียมโพสต์เรียบร้อย กรุณาตรวจสอบแล้วกดปุ่มด้านล่าง");
@@ -498,7 +561,7 @@
           latestButton.click();
           setStatus("กำลังโพสต์…");
           await sleep(4000);
-          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V13" });
+          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V13.4" });
         };
       }
     } catch (error) {

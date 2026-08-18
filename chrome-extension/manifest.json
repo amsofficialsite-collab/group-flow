@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "GROUP FLOW Posting Agent V13.2",
-  "version": "1.0.16",
-  "description": "โพสต์ Facebook Group ตามเวลา รองรับ Identity-specific Groups, หลายรูป และกู้คิวค้างอัตโนมัติ",
+  "name": "GROUP FLOW Posting Agent V13.4",
+  "version": "1.0.17",
+  "description": "โพสต์ Facebook Group ตามเวลา รองรับ Profile/Page, Identity-specific Groups และตรวจจับ Composer หลายรูปแบบ",
   "permissions": [
     "storage",
     "tabs",
