@@ -1,11 +1,13 @@
 importScripts("config.js");
 
-console.log("===== GROUP FLOW V11 BACKGROUND LOADED =====");
+console.log("===== GROUP FLOW V13 BACKGROUND LOADED =====");
 
 const JOB_KEY = "groupflow_active_job";
 const SCHEDULER_ALARM_NAME = "GROUPFLOW_SCHEDULER";
 const API_BASE_URL = String(self.GROUPFLOW_CONFIG?.API_BASE_URL || "").replace(/\/$/, "");
 const AGENT_SECRET = String(self.GROUPFLOW_CONFIG?.AGENT_SECRET || "");
+const MAX_LOCAL_JOB_AGE_MS = 5 * 60 * 1000;
+const API_RETRY_DELAYS_MS = [750, 1500, 3000];
 
 console.log("API =", API_BASE_URL);
 console.log("SECRET =", AGENT_SECRET);
@@ -63,7 +65,22 @@ async function fetchImageAsDataUrl(url) {
   return { dataUrl: `data:${type};base64,${arrayBufferToBase64(buffer)}`, type };
 }
 
+async function clearStaleLocalJob() {
+  const current = await chrome.storage.local.get(JOB_KEY);
+  const job = current[JOB_KEY];
+  if (!job) return false;
+  const age = Date.now() - Number(job.createdAt || 0);
+  if (age <= MAX_LOCAL_JOB_AGE_MS) return false;
+  console.warn("[GROUP FLOW] ล้าง Active Job ที่ค้างเกินกำหนด", job.queueId);
+  await chrome.storage.local.remove(JOB_KEY);
+  if (job.facebookTabId) {
+    try { await chrome.tabs.remove(job.facebookTabId); } catch (_) {}
+  }
+  return true;
+}
+
 async function startJob(job, sourceTabId = null) {
+  await clearStaleLocalJob();
   const current = await chrome.storage.local.get(JOB_KEY);
   if (current[JOB_KEY]) {
     console.log("[GROUP FLOW] มีงานกำลังทำอยู่ จึงยังไม่เริ่มงานใหม่");
@@ -92,22 +109,33 @@ async function startJob(job, sourceTabId = null) {
 }
 
 async function finishRemoteJob(job, message) {
-  if (!job?.queueId) return;
+  if (!job?.queueId) return { ok: true };
 
-  await apiFetch("/api/posting/finish", {
-    method: "POST",
-    body: JSON.stringify({
-      queueId: job.queueId,
-      result: message.result,
-      postUrl: message.postUrl || null,
-      notes: message.notes || "บันทึกจาก Chrome Posting Agent V11",
-    }),
-  });
+  let lastError = null;
+  for (let attempt = 0; attempt <= API_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await apiFetch("/api/posting/finish", {
+        method: "POST",
+        body: JSON.stringify({
+          queueId: job.queueId,
+          result: message.result,
+          postUrl: message.postUrl || null,
+          notes: message.notes || "บันทึกจาก Chrome Posting Agent V13",
+        }),
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt >= API_RETRY_DELAYS_MS.length) break;
+      await new Promise((resolve) => setTimeout(resolve, API_RETRY_DELAYS_MS[attempt]));
+    }
+  }
+  throw lastError || new Error("บันทึกผลกลับ GROUP FLOW ไม่สำเร็จ");
 }
 
 async function runScheduler() {
   console.log("[GROUP FLOW] Scheduler ตรวจสอบคิว:", new Date().toLocaleString("th-TH"));
 
+  await clearStaleLocalJob();
   const current = await chrome.storage.local.get(JOB_KEY);
   if (current[JOB_KEY]) {
     console.log("[GROUP FLOW] ข้ามรอบนี้ เพราะมี Active Job อยู่");
@@ -184,8 +212,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         notes: message.notes || "บันทึกจาก Chrome Posting Agent V11",
       };
 
+      let remoteResult = null;
+      let remoteError = null;
       try {
-        await finishRemoteJob(job, message);
+        remoteResult = await finishRemoteJob(job, message);
 
         if (job?.sourceTabId) {
           try {
@@ -196,13 +226,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             await chrome.tabs.update(job.sourceTabId, { active: true });
           } catch (_) {}
         }
-
-        await chrome.storage.local.remove(JOB_KEY);
-        sendResponse({ ok: true });
       } catch (error) {
-        console.error("[GROUP FLOW] บันทึกผลไม่สำเร็จ:", error);
-        sendResponse({ ok: false, error: error.message });
+        remoteError = error;
+        console.error("[GROUP FLOW] บันทึกผลไม่สำเร็จหลัง retry:", error);
+      } finally {
+        // Never let one broken callback block every future scheduler cycle.
+        await chrome.storage.local.remove(JOB_KEY);
+        if (job?.facebookTabId) {
+          try { await chrome.tabs.remove(job.facebookTabId); } catch (_) {}
+        }
       }
+
+      sendResponse({
+        ok: !remoteError,
+        retry: Boolean(remoteResult?.retry),
+        error: remoteError?.message || null,
+      });
+
+      // Continue immediately. If this attempt is scheduled for retry in 30s,
+      // the next alarm will pick it up; otherwise another due job can start now.
+      void runScheduler().catch((error) => {
+        console.error("[GROUP FLOW] Auto Continue Error:", error);
+      });
     });
     return true;
   }

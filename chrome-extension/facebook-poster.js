@@ -427,7 +427,7 @@
     panel.id = "groupflow-agent-panel";
     panel.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483647;width:360px;background:#10131a;color:white;border:1px solid #3b82f6;border-radius:16px;padding:16px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.45)";
     panel.innerHTML = `
-      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V12.4</div>
+      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V13</div>
       <div style="margin-top:6px;font-size:12px;color:#93c5fd">${job.groupName || "Facebook Group"}</div>
       <div id="gf-status" style="margin-top:10px;font-size:13px;line-height:1.5;color:#e2e8f0">กำลังเตรียมโพสต์…</div>
       <div style="display:flex;gap:8px;margin-top:14px">
@@ -487,7 +487,7 @@
         await sleep(1000);
         postButton.click();
         await sleep(4000);
-        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V12.4" });
+        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V13" });
         setStatus("ส่งคำสั่งโพสต์แล้ว และบันทึกผลกลับ GROUP FLOW แล้ว");
       } else {
         setStatus("เตรียมโพสต์เรียบร้อย กรุณาตรวจสอบแล้วกดปุ่มด้านล่าง");
@@ -498,7 +498,7 @@
           latestButton.click();
           setStatus("กำลังโพสต์…");
           await sleep(4000);
-          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V12.4" });
+          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V13" });
         };
       }
     } catch (error) {

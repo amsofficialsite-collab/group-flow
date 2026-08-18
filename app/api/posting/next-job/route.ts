@@ -4,6 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const MAX_ATTEMPTS = 3;
+const STALE_POSTING_MS = 5 * 60 * 1000;
+
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
@@ -77,12 +80,49 @@ export async function POST(request: NextRequest) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const now = new Date().toISOString();
+  const nowDate = new Date();
+  const now = nowDate.toISOString();
+  const staleBefore = new Date(nowDate.getTime() - STALE_POSTING_MS).toISOString();
+
+  // Recover jobs claimed by an Extension instance that disappeared or failed
+  // before calling /finish. Jobs below the retry limit return to pending.
+  const { data: staleJobs, error: staleError } = await supabase
+    .from("queue_items")
+    .select("id,attempt_count")
+    .eq("status", "posting")
+    .lt("posting_started_at", staleBefore)
+    .limit(50);
+
+  if (staleError) {
+    return NextResponse.json({ error: staleError.message }, { status: 500 });
+  }
+
+  for (const staleJob of staleJobs ?? []) {
+    const attempts = Number(staleJob.attempt_count || 0);
+    const terminal = attempts >= MAX_ATTEMPTS;
+    const { error } = await supabase
+      .from("queue_items")
+      .update({
+        status: terminal ? "failed" : "pending",
+        posting_started_at: null,
+        posting_finished_at: terminal ? now : null,
+        last_error: terminal
+          ? `Posting Agent timeout after ${attempts} attempts`
+          : `Posting Agent timeout; retry ${attempts + 1}/${MAX_ATTEMPTS}`,
+        updated_at: now,
+      })
+      .eq("id", staleJob.id)
+      .eq("status", "posting");
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  }
 
   const { data: candidates, error: selectError } = await supabase
     .from("queue_items")
     .select(
-      "id,scheduled_at,status,attempt_count,groups(id,name,facebook_url,posting_identity),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
+      "id,scheduled_at,status,attempt_count,post_as,posting_identity,groups(*),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
     )
     .eq("status", "pending")
     .lte("scheduled_at", now)
@@ -96,14 +136,25 @@ export async function POST(request: NextRequest) {
   const row = candidates?.[0] as any;
   if (!row) return NextResponse.json({ job: null });
 
+  const attempts = Number(row.attempt_count || 0);
+  if (attempts >= MAX_ATTEMPTS) {
+    await supabase
+      .from("queue_items")
+      .update({ status: "failed", posting_finished_at: now, updated_at: now, last_error: "Retry limit reached" })
+      .eq("id", row.id)
+      .eq("status", "pending");
+    return NextResponse.json({ job: null });
+  }
+
   const { data: claimed, error: claimError } = await supabase
     .from("queue_items")
     .update({
       status: "posting",
       posting_started_at: now,
+      posting_finished_at: null,
       updated_at: now,
       last_error: null,
-      attempt_count: Number(row.attempt_count || 0) + 1,
+      attempt_count: attempts + 1,
     })
     .eq("id", row.id)
     .eq("status", "pending")
@@ -160,10 +211,17 @@ export async function POST(request: NextRequest) {
       queueId: row.id,
       groupUrl: group.facebook_url,
       groupName: group.name,
-      postingIdentity: group.posting_identity || "",
+      postingIdentity:
+        row.post_as === "profile"
+          ? ""
+          : row.post_as === "page"
+            ? row.posting_identity || ""
+            : group.posting_identity || "",
       caption: formatFacebookCaption(rawCaption),
       imageUrls,
       autoPost: true,
+      attempt: attempts + 1,
+      maxAttempts: MAX_ATTEMPTS,
     },
   });
 }

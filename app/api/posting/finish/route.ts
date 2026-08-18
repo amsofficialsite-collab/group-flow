@@ -4,6 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 30 * 1000;
+
 export async function POST(request: NextRequest) {
   if (
     request.headers.get("x-groupflow-agent-secret") !==
@@ -26,7 +29,7 @@ export async function POST(request: NextRequest) {
   const queueId = String(body?.queueId || "");
   const result = body?.result === "posted" ? "posted" : "failed";
   const postUrl = body?.postUrl ? String(body.postUrl) : null;
-  const notes = body?.notes ? String(body.notes) : "บันทึกจาก Chrome Posting Agent V11";
+  const notes = body?.notes ? String(body.notes) : "บันทึกจาก Chrome Posting Agent V13";
 
   if (!queueId) {
     return NextResponse.json({ error: "queueId is required" }, { status: 400 });
@@ -36,11 +39,12 @@ export async function POST(request: NextRequest) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const now = new Date().toISOString();
+  const nowDate = new Date();
+  const now = nowDate.toISOString();
 
   const { data: queueRow, error: queueError } = await supabase
     .from("queue_items")
-    .select("id,group_id,content_id")
+    .select("id,group_id,content_id,status,attempt_count")
     .eq("id", queueId)
     .maybeSingle();
 
@@ -52,10 +56,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Queue item not found" }, { status: 404 });
   }
 
+  // Idempotency: duplicate finish messages must not create duplicate logs.
+  if (queueRow.status === "posted") {
+    return NextResponse.json({ ok: true, alreadyFinished: true, retry: false });
+  }
+
+  const attempts = Number(queueRow.attempt_count || 0);
+  const shouldRetry = result === "failed" && attempts < MAX_ATTEMPTS;
+  const nextStatus = shouldRetry ? "pending" : result;
+  const retryAt = shouldRetry
+    ? new Date(nowDate.getTime() + RETRY_DELAY_MS).toISOString()
+    : null;
+
   const { error: updateError } = await supabase
     .from("queue_items")
     .update({
-      status: result,
+      status: nextStatus,
+      scheduled_at: retryAt ?? undefined,
+      posting_started_at: null,
       posting_finished_at: now,
       updated_at: now,
       last_error: result === "failed" ? notes : null,
@@ -72,7 +90,9 @@ export async function POST(request: NextRequest) {
     content_id: queueRow.content_id,
     result,
     post_url: postUrl,
-    notes,
+    notes: shouldRetry
+      ? `${notes} | retry ${attempts + 1}/${MAX_ATTEMPTS}`
+      : notes,
     posted_at: now,
   });
 
@@ -80,5 +100,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: logError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    retry: shouldRetry,
+    nextAttemptAt: retryAt,
+    attempt: attempts,
+    maxAttempts: MAX_ATTEMPTS,
+  });
 }

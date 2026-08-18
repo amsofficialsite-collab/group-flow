@@ -42,6 +42,8 @@ type QueueRow = {
   id: string;
   scheduled_at: string;
   status: "pending" | "posting" | "posted" | "failed" | "skipped";
+  post_as?: "group" | "profile" | "page";
+  posting_identity?: string | null;
   groups: Group | null;
   content_items: Content | null;
 };
@@ -168,6 +170,8 @@ export default function DailyQueue() {
   const [assistant, setAssistant] = useState<QueueRow | null>(null);
   const [groupId, setGroupId] = useState("");
   const [contentId, setContentId] = useState("");
+  const [postAs, setPostAs] = useState<"profile" | "page">("profile");
+  const [pageIdentity, setPageIdentity] = useState("");
   const today = useMemo(() => new Date(), []);
   const nextWeek = useMemo(() => {
     const date = new Date();
@@ -179,7 +183,7 @@ export default function DailyQueue() {
   const [startDate, setStartDate] = useState(toDateInputValue(today));
   const [endDate, setEndDate] = useState(toDateInputValue(nextWeek));
   const [selectedDays, setSelectedDays] = useState<number[]>([today.getDay()]);
-  const [times, setTimes] = useState<string[]>(["09:00"]);
+  const [timesByDay, setTimesByDay] = useState<Record<number, string[]>>({ [today.getDay()]: ["09:00"] });
   const [postUrl, setPostUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -189,7 +193,7 @@ export default function DailyQueue() {
     const [g, c, q] = await Promise.all([
       supabase
         .from("groups")
-        .select("id,name,facebook_url,posting_identity")
+        .select("*")
         .eq("active", true)
         .order("name"),
       supabase
@@ -202,7 +206,7 @@ export default function DailyQueue() {
       supabase
         .from("queue_items")
         .select(
-          "id,scheduled_at,status,groups(id,name,facebook_url,posting_identity),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
+          "id,scheduled_at,status,post_as,posting_identity,groups(*),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
         )
         .order("scheduled_at", { ascending: true }),
     ]);
@@ -291,43 +295,82 @@ export default function DailyQueue() {
 
     setGroupId("");
     setContentId("");
+    setPostAs("profile");
+    setPageIdentity("");
     setWhen("");
     setScheduleMode("single");
     setStartDate(toDateInputValue(now));
     setEndDate(toDateInputValue(weekLater));
     setSelectedDays([now.getDay()]);
-    setTimes(["09:00"]);
+    setTimesByDay({ [now.getDay()]: ["09:00"] });
+  }
+
+  function selectGroup(value: string) {
+    setGroupId(value);
+    const group = groups.find((item) => item.id === value);
+    if (group?.posting_identity) {
+      setPostAs("page");
+      setPageIdentity(group.posting_identity);
+    } else {
+      setPostAs("profile");
+      setPageIdentity("");
+    }
   }
 
   function toggleDay(day: number) {
-    setSelectedDays((current) =>
-      current.includes(day)
-        ? current.filter((value) => value !== day)
-        : [...current, day],
-    );
+    setSelectedDays((current) => {
+      const selected = current.includes(day);
+      if (selected) {
+        setTimesByDay((currentTimes) => {
+          const next = { ...currentTimes };
+          delete next[day];
+          return next;
+        });
+        return current.filter((value) => value !== day);
+      }
+
+      setTimesByDay((currentTimes) => ({
+        ...currentTimes,
+        [day]: currentTimes[day]?.length ? currentTimes[day] : ["09:00"],
+      }));
+      return [...current, day];
+    });
   }
 
-  function addTime() {
-    setTimes((current) => [...current, "12:00"]);
+  function addTime(day: number) {
+    setTimesByDay((current) => ({
+      ...current,
+      [day]: [...(current[day] ?? ["09:00"]), "12:00"],
+    }));
   }
 
-  function updateTime(index: number, value: string) {
-    setTimes((current) =>
-      current.map((time, timeIndex) => (timeIndex === index ? value : time)),
-    );
+  function updateTime(day: number, index: number, value: string) {
+    setTimesByDay((current) => ({
+      ...current,
+      [day]: (current[day] ?? []).map((time, timeIndex) =>
+        timeIndex === index ? value : time,
+      ),
+    }));
   }
 
-  function removeTime(index: number) {
-    setTimes((current) =>
-      current.length === 1
-        ? current
-        : current.filter((_, timeIndex) => timeIndex !== index),
-    );
+  function removeTime(day: number, index: number) {
+    setTimesByDay((current) => {
+      const dayTimes = current[day] ?? [];
+      if (dayTimes.length <= 1) return current;
+      return {
+        ...current,
+        [day]: dayTimes.filter((_, timeIndex) => timeIndex !== index),
+      };
+    });
   }
 
   async function add() {
     if (!groupId || !contentId) {
       alert("เลือกกลุ่มและคอนเทนต์ให้ครบค่ะ");
+      return;
+    }
+    if (postAs === "page" && !pageIdentity.trim()) {
+      alert("กรุณาระบุชื่อ Facebook Page ที่ต้องการใช้โพสต์ค่ะ");
       return;
     }
 
@@ -351,6 +394,8 @@ export default function DailyQueue() {
           content_id: contentId,
           scheduled_at: scheduledDate.toISOString(),
           status: "pending",
+          post_as: postAs,
+          posting_identity: postAs === "page" ? pageIdentity.trim() : null,
         });
 
         if (error) throw error;
@@ -366,9 +411,14 @@ export default function DailyQueue() {
           return;
         }
 
-        const validTimes = Array.from(new Set<string>(times.filter((time) => Boolean(time)))).sort();
-        if (validTimes.length === 0) {
-          alert("เพิ่มอย่างน้อย 1 เวลาโพสต์ค่ะ");
+        const normalizedTimesByDay = Object.fromEntries(
+          selectedDays.map((day) => [
+            day,
+            Array.from(new Set<string>((timesByDay[day] ?? []).filter(Boolean))).sort(),
+          ]),
+        ) as Record<number, string[]>;
+        if (selectedDays.some((day) => normalizedTimesByDay[day].length === 0)) {
+          alert("ทุกวันที่เลือกต้องมีอย่างน้อย 1 เวลาโพสต์ค่ะ");
           return;
         }
 
@@ -384,12 +434,15 @@ export default function DailyQueue() {
           content_id: string;
           scheduled_at: string;
           status: "pending";
+          post_as: "profile" | "page";
+          posting_identity: string | null;
         }> = [];
 
         const cursor = new Date(start);
         while (cursor <= end) {
           if (selectedDays.includes(cursor.getDay())) {
             const dateValue = toDateInputValue(cursor);
+            const validTimes = normalizedTimesByDay[cursor.getDay()] ?? [];
             for (const time of validTimes) {
               const scheduledDate = dateFromLocalInputs(dateValue, time);
               if (scheduledDate && scheduledDate >= new Date()) {
@@ -398,6 +451,8 @@ export default function DailyQueue() {
                   content_id: contentId,
                   scheduled_at: scheduledDate.toISOString(),
                   status: "pending",
+                  post_as: postAs,
+                  posting_identity: postAs === "page" ? pageIdentity.trim() : null,
                 });
               }
             }
@@ -513,6 +568,12 @@ export default function DailyQueue() {
     setAssistant(row);
   }
 
+  function postingIdentityFor(row: QueueRow): string {
+    if (row.post_as === "profile") return "";
+    if (row.post_as === "page") return row.posting_identity?.trim() || "";
+    return row.groups?.posting_identity?.trim() || "";
+  }
+
   function sendToPostingAgent(row: QueueRow, autoPost = false) {
     const group = row.groups;
     const content = row.content_items;
@@ -534,7 +595,7 @@ export default function DailyQueue() {
       queueId: row.id,
       groupUrl: group.facebook_url,
       groupName: group.name,
-      postingIdentity: group.posting_identity || "",
+      postingIdentity: postingIdentityFor(row),
       caption,
       imageUrls,
       imageCount: imageUrls.length,
@@ -547,7 +608,7 @@ export default function DailyQueue() {
           queueId: row.id,
           groupUrl: group.facebook_url,
           groupName: group.name,
-          postingIdentity: group.posting_identity || "",
+          postingIdentity: postingIdentityFor(row),
           caption,
           imageUrls,
           autoPost,
@@ -763,7 +824,7 @@ export default function DailyQueue() {
                 <select
                   className="input mt-1"
                   value={groupId}
-                  onChange={(event) => setGroupId(event.target.value)}
+                  onChange={(event) => selectGroup(event.target.value)}
                 >
                   <option value="">เลือกกลุ่ม</option>
                   {groups.map((group) => (
@@ -773,6 +834,37 @@ export default function DailyQueue() {
                   ))}
                 </select>
               </label>
+
+              <div>
+                <p className="text-sm font-medium">Post as</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    className={postAs === "profile" ? "btn-primary justify-center" : "btn-ghost justify-center"}
+                    onClick={() => { setPostAs("profile"); setPageIdentity(""); }}
+                  >
+                    Facebook Profile
+                  </button>
+                  <button
+                    type="button"
+                    className={postAs === "page" ? "btn-primary justify-center" : "btn-ghost justify-center"}
+                    onClick={() => setPostAs("page")}
+                  >
+                    Facebook Page
+                  </button>
+                </div>
+                {postAs === "page" && (
+                  <label className="mt-3 block text-sm text-slate-700">
+                    ชื่อ Facebook Page
+                    <input
+                      className="input mt-1"
+                      value={pageIdentity}
+                      onChange={(event) => setPageIdentity(event.target.value)}
+                      placeholder="เช่น AMS Careers"
+                    />
+                  </label>
+                )}
+              </div>
 
               <label>
                 คอนเทนต์
@@ -864,41 +956,48 @@ export default function DailyQueue() {
                     </div>
                   </div>
 
-                  <div>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium">เวลาโพสต์</p>
-                      <button type="button" className="btn-ghost" onClick={addTime}>
-                        <Plus size={15} />
-                        เพิ่มเวลา
-                      </button>
-                    </div>
-
-                    <div className="mt-2 space-y-2">
-                      {times.map((time, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Clock3 size={17} className="shrink-0 text-cyan-300" />
-                          <input
-                            className="input"
-                            type="time"
-                            value={time}
-                            onChange={(event) => updateTime(index, event.target.value)}
-                          />
-                          <button
-                            type="button"
-                            className="btn-danger"
-                            disabled={times.length === 1}
-                            onClick={() => removeTime(index)}
-                            aria-label={`ลบเวลา ${time}`}
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">เวลาโพสต์แยกตามวัน</p>
+                    {WEEKDAYS.filter((day) => selectedDays.includes(day.value)).map((day) => {
+                      const dayTimes = timesByDay[day.value] ?? ["09:00"];
+                      return (
+                        <div key={day.value} className="rounded-xl border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-slate-700">{day.label}</p>
+                            <button type="button" className="btn-ghost" onClick={() => addTime(day.value)}>
+                              <Plus size={15} />
+                              เพิ่มเวลา
+                            </button>
+                          </div>
+                          <div className="mt-2 space-y-2">
+                            {dayTimes.map((time, index) => (
+                              <div key={`${day.value}-${index}`} className="flex items-center gap-2">
+                                <Clock3 size={17} className="shrink-0 text-indigo-600" />
+                                <input
+                                  className="input"
+                                  type="time"
+                                  value={time}
+                                  onChange={(event) => updateTime(day.value, index, event.target.value)}
+                                />
+                                <button
+                                  type="button"
+                                  className="btn-danger"
+                                  disabled={dayTimes.length === 1}
+                                  onClick={() => removeTime(day.value, index)}
+                                  aria-label={`ลบเวลา ${time} วัน${day.label}`}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
 
-                  <p className="text-xs leading-5 text-white/45">
-                    ระบบจะสร้างคิวทุกวันที่เลือก ตามเวลาทั้งหมดที่ระบุ ภายในช่วงวันที่เริ่มต้นถึงวันที่สิ้นสุด
+                  <p className="text-xs leading-5 text-slate-500">
+                    แต่ละวันสามารถมีชุดเวลาไม่เหมือนกันได้ เช่น จันทร์ 08:00/12:00/18:00 และอังคาร 09:00/19:00
                   </p>
                 </div>
               )}

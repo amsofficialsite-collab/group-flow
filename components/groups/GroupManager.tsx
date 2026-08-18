@@ -71,7 +71,7 @@ export default function GroupManager() {
     const [groupsResult, categoriesResult] = await Promise.all([
       supabase
         .from("groups")
-        .select("id,name,facebook_url,posting_identity,category,province,members,active,notes,created_at,updated_at")
+        .select("*")
         .order("created_at", { ascending: false }),
       supabase.from("group_categories").select("name").order("name"),
     ]);
@@ -79,7 +79,21 @@ export default function GroupManager() {
     if (groupsResult.error) {
       setError(groupsResult.error.message);
     } else {
-      setGroups((groupsResult.data ?? []) as FacebookGroup[]);
+      setGroups(
+        (groupsResult.data ?? []).map((group) => ({
+          id: String(group.id),
+          name: String(group.name ?? ""),
+          facebook_url: group.facebook_url ?? null,
+          posting_identity: group.posting_identity ?? null,
+          category: group.category ?? null,
+          province: group.province ?? null,
+          members: Number(group.members ?? 0),
+          active: group.active !== false,
+          notes: group.notes ?? null,
+          created_at: String(group.created_at ?? new Date(0).toISOString()),
+          updated_at: String(group.updated_at ?? group.created_at ?? new Date(0).toISOString()),
+        })) as FacebookGroup[],
+      );
     }
 
     if (!categoriesResult.error) {
@@ -218,7 +232,7 @@ export default function GroupManager() {
         <SummaryCard label="สมาชิกรวมโดยประมาณ" value={totalMembers.toLocaleString()} />
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 md:p-5">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-1 flex-col gap-3 sm:flex-row">
             <label className="relative block flex-1">
@@ -227,20 +241,20 @@ export default function GroupManager() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="ค้นหาชื่อกลุ่ม หมวดหมู่ จังหวัด หรือลิงก์"
-                className="w-full rounded-xl border border-white/10 bg-black/30 py-2.5 pl-10 pr-3 text-sm outline-none placeholder:text-white/30 focus:border-cyan-400/60"
+                className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-400"
               />
             </label>
             <select
               value={status}
               onChange={(event) => setStatus(event.target.value as typeof status)}
-              className="rounded-xl border border-white/10 bg-[#101319] px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-indigo-400"
             >
               <option value="all">ทุกสถานะ</option>
               <option value="active">ใช้งาน</option>
               <option value="paused">พักใช้งาน</option>
             </select>
           </div>
-          <button onClick={openCreate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-black hover:bg-cyan-100">
+          <button onClick={openCreate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700">
             <Plus size={18} /> เพิ่ม Facebook Group
           </button>
         </div>
@@ -249,7 +263,7 @@ export default function GroupManager() {
       {error && <Alert tone="error" text={error} />}
       {success && <Alert tone="success" text={success} />}
 
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.025]">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         {loading ? (
           <div className="grid min-h-64 place-items-center text-white/50"><Loader2 className="animate-spin" /></div>
         ) : filteredGroups.length === 0 ? (
@@ -257,13 +271,13 @@ export default function GroupManager() {
             <div>
               <Users className="mx-auto mb-3 text-white/25" size={36} />
               <p className="font-semibold">ยังไม่พบ Facebook Group</p>
-              <p className="mt-1 text-sm text-white/45">กด “เพิ่ม Facebook Group” เพื่อเริ่มจัดเก็บรายชื่อกลุ่ม</p>
+              <p className="mt-1 text-sm text-slate-500">กด “เพิ่ม Facebook Group” เพื่อเริ่มจัดเก็บรายชื่อกลุ่ม</p>
             </div>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[960px] text-left text-sm">
-              <thead className="border-b border-white/10 bg-white/[0.035] text-xs uppercase tracking-wide text-white/45">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-5 py-4">ชื่อกลุ่ม</th>
                   <th className="px-5 py-4">หมวดหมู่</th>
@@ -273,32 +287,32 @@ export default function GroupManager() {
                   <th className="px-5 py-4 text-right">จัดการ</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/10">
+              <tbody className="divide-y divide-slate-200">
                 {filteredGroups.map((group) => (
-                  <tr key={group.id} className="hover:bg-white/[0.025]">
+                  <tr key={group.id} className="hover:bg-slate-50">
                     <td className="px-5 py-4">
                       <div className="font-semibold">{group.name}</div>
                       {group.posting_identity && (
                         <p className="mt-1 text-xs text-indigo-600">โพสต์ในนาม: {group.posting_identity}</p>
                       )}
                       {group.facebook_url && (
-                        <a href={group.facebook_url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-cyan-300 hover:underline">
+                        <a href={group.facebook_url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-indigo-600 hover:underline">
                           เปิดกลุ่ม <ExternalLink size={12} />
                         </a>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-white/65">{group.category || "—"}</td>
-                    <td className="px-5 py-4 text-white/65">{group.province || "—"}</td>
+                    <td className="px-5 py-4 text-slate-600">{group.category || "—"}</td>
+                    <td className="px-5 py-4 text-slate-600">{group.province || "—"}</td>
                     <td className="px-5 py-4 text-right font-medium">{(group.members || 0).toLocaleString()}</td>
                     <td className="px-5 py-4">
-                      <button onClick={() => void toggleStatus(group)} className={`rounded-full px-3 py-1 text-xs font-semibold ${group.active ? "bg-emerald-400/15 text-emerald-300" : "bg-amber-400/15 text-amber-300"}`}>
+                      <button onClick={() => void toggleStatus(group)} className={`rounded-full px-3 py-1 text-xs font-semibold ${group.active ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                         {group.active ? "ใช้งาน" : "พักใช้งาน"}
                       </button>
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => openEdit(group)} title="แก้ไข" className="rounded-lg border border-white/10 p-2 text-white/60 hover:bg-white/10 hover:text-white"><Pencil size={16} /></button>
-                        <button onClick={() => void deleteGroup(group)} title="ลบ" className="rounded-lg border border-red-400/20 p-2 text-red-300/80 hover:bg-red-400/10 hover:text-red-200"><Trash2 size={16} /></button>
+                        <button onClick={() => openEdit(group)} title="แก้ไข" className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><Pencil size={16} /></button>
+                        <button onClick={() => void deleteGroup(group)} title="ลบ" className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"><Trash2 size={16} /></button>
                       </div>
                     </td>
                   </tr>
@@ -310,14 +324,14 @@ export default function GroupManager() {
       </div>
 
       {dialogOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-sm" onMouseDown={closeDialog}>
-          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/15 bg-[#101319] shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/40 p-4 backdrop-blur-sm" onMouseDown={closeDialog}>
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
                 <h2 className="text-lg font-bold">{editingId ? "แก้ไข Facebook Group" : "เพิ่ม Facebook Group"}</h2>
-                <p className="mt-0.5 text-xs text-white/45">จัดเก็บข้อมูลสำหรับใช้วางแผนและติดตามการโพสต์</p>
+                <p className="mt-0.5 text-xs text-slate-500">จัดเก็บข้อมูลสำหรับใช้วางแผนและติดตามการโพสต์</p>
               </div>
-              <button onClick={closeDialog} className="rounded-lg p-2 text-white/50 hover:bg-white/10 hover:text-white"><X size={20} /></button>
+              <button onClick={closeDialog} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"><X size={20} /></button>
             </div>
 
             <form onSubmit={saveGroup} className="space-y-4 p-5">
@@ -362,8 +376,8 @@ export default function GroupManager() {
                 <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} className="form-input min-h-24 resize-y" placeholder="เช่น ห้ามโพสต์ซ้ำภายใน 7 วัน / ต้องรอแอดมินอนุมัติ" />
               </Field>
               {error && <Alert tone="error" text={error} />}
-              <div className="flex flex-col-reverse gap-3 border-t border-white/10 pt-4 sm:flex-row sm:justify-end">
-                <button type="button" onClick={closeDialog} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-white/65 hover:bg-white/10 hover:text-white">ยกเลิก</button>
+              <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end">
+                <button type="button" onClick={closeDialog} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-white/10 hover:text-white">ยกเลิก</button>
                 <button disabled={saving} type="submit" className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-black hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60">
                   {saving && <Loader2 className="animate-spin" size={17} />}{editingId ? "บันทึกการแก้ไข" : "เพิ่มกลุ่ม"}
                 </button>
@@ -377,11 +391,11 @@ export default function GroupManager() {
 }
 
 function SummaryCard({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] p-5"><p className="text-sm text-white/45">{label}</p><p className="mt-2 text-3xl font-black tracking-tight">{value}</p></div>;
+  return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-3xl font-black tracking-tight">{value}</p></div>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block"><span className="mb-1.5 block text-sm font-semibold text-white/70">{label}</span>{children}</label>;
+  return <label className="block"><span className="mb-1.5 block text-sm font-semibold text-slate-700">{label}</span>{children}</label>;
 }
 
 function Alert({ tone, text }: { tone: "error" | "success"; text: string }) {

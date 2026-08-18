@@ -33,7 +33,7 @@ export default function AppShell({ title, children }: { title: string; children:
       <main className="min-w-0">
         <header className="gf-header sticky top-0 z-20 flex items-center justify-between border-b px-6 py-5 md:px-8">
           <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-600">GROUP FLOW</p><h1 className="text-2xl font-bold text-slate-900">{title}</h1></div>
-          <div className="flex items-center gap-2"><div className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-500 shadow-sm">V12.4</div><LogoutButton /></div>
+          <div className="flex items-center gap-2"><div className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-500 shadow-sm">V13</div><LogoutButton /></div>
         </header>
         <section className="p-6 md:p-8">{children}</section>
       </main>
