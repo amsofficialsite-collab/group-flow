@@ -17,11 +17,19 @@ import {
 } from "lucide-react";
 import { createBrowserClient } from "@supabase/ssr";
 
+type Identity = {
+  id: string;
+  name: string;
+  identity_type: "profile" | "page";
+  active: boolean;
+};
+
 type Group = {
   id: string;
   name: string;
   facebook_url: string | null;
   posting_identity: string | null;
+  group_identity_access?: { identity_id: string }[];
 };
 
 type ContentImage = {
@@ -44,6 +52,7 @@ type QueueRow = {
   status: "pending" | "posting" | "posted" | "failed" | "skipped";
   post_as?: "group" | "profile" | "page";
   posting_identity?: string | null;
+  identity_id?: string | null;
   groups: Group | null;
   content_items: Content | null;
 };
@@ -163,15 +172,15 @@ export default function DailyQueue() {
   );
 
   const [groups, setGroups] = useState<Group[]>([]);
+  const [identities, setIdentities] = useState<Identity[]>([]);
   const [contents, setContents] = useState<Content[]>([]);
   const [rows, setRows] = useState<QueueRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [assistant, setAssistant] = useState<QueueRow | null>(null);
+  const [identityId, setIdentityId] = useState("");
   const [groupId, setGroupId] = useState("");
   const [contentId, setContentId] = useState("");
-  const [postAs, setPostAs] = useState<"profile" | "page">("profile");
-  const [pageIdentity, setPageIdentity] = useState("");
   const today = useMemo(() => new Date(), []);
   const nextWeek = useMemo(() => {
     const date = new Date();
@@ -190,11 +199,17 @@ export default function DailyQueue() {
   async function load() {
     setLoading(true);
 
-    const [g, c, q] = await Promise.all([
+    const [g, i, c, q] = await Promise.all([
       supabase
         .from("groups")
-        .select("*")
+        .select("id,name,facebook_url,posting_identity,group_identity_access(identity_id)")
         .eq("active", true)
+        .order("name"),
+      supabase
+        .from("facebook_identities")
+        .select("id,name,identity_type,active")
+        .eq("active", true)
+        .order("identity_type")
         .order("name"),
       supabase
         .from("content_items")
@@ -206,17 +221,19 @@ export default function DailyQueue() {
       supabase
         .from("queue_items")
         .select(
-          "id,scheduled_at,status,post_as,posting_identity,groups(*),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
+          "id,scheduled_at,status,post_as,posting_identity,identity_id,groups(*),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
         )
         .in("status", ["pending", "posting"])
         .order("scheduled_at", { ascending: true }),
     ]);
 
     if (g.error) alert(g.error.message);
+    if (i.error) alert(i.error.message);
     if (c.error) alert(c.error.message);
     if (q.error) alert(q.error.message);
 
-    setGroups((g.data || []) as Group[]);
+    setGroups((g.data || []) as unknown as Group[]);
+    setIdentities((i.data || []) as Identity[]);
     setContents((c.data || []) as Content[]);
     setRows((q.data || []) as unknown as QueueRow[]);
     setLoading(false);
@@ -238,64 +255,21 @@ export default function DailyQueue() {
   useEffect(() => {
     const onResult = async (event: Event) => {
       const detail = (event as CustomEvent<PostingResultDetail>).detail;
-
       if (!detail?.queueId || !detail?.result) return;
 
-      const now = new Date().toISOString();
-
-      const { error: updateError } = await supabase
-        .from("queue_items")
-        .update({
-          status: detail.result,
-          updated_at: now,
-        })
-        .eq("id", detail.queueId);
-
-      if (updateError) {
-        alert(updateError.message);
-        return;
-      }
-
-      const row = rows.find((item) => item.id === detail.queueId);
-
-      const { error: logError } = await supabase
-        .from("posting_logs")
-        .insert({
-          queue_id: detail.queueId,
-          group_id: row?.groups?.id || null,
-          content_id: row?.content_items?.id || null,
-          result: detail.result,
-          post_url: detail.postUrl || null,
-          notes: detail.notes || "บันทึกจาก Chrome Posting Agent",
-          posted_at: now,
-        });
-
-      if (logError) {
-        alert(logError.message);
-        return;
-      }
-
+      // The Extension has already persisted queue status + posting_logs via
+      // /api/posting/finish. The dashboard only refreshes here to avoid
+      // duplicate History rows.
       await load();
-
       alert(
         detail.result === "posted"
           ? "Posting Agent รายงานว่าโพสต์สำเร็จแล้วค่ะ"
-          : `Posting Agent รายงานว่าโพสต์ไม่สำเร็จค่ะ${
-              detail.notes ? `\n\nสาเหตุ: ${detail.notes}` : ""
-            }`,
+          : `Posting Agent รายงานว่าโพสต์ไม่สำเร็จค่ะ${detail.notes ? `\n\nสาเหตุ: ${detail.notes}` : ""}`,
       );
     };
 
-    window.addEventListener(
-      "groupflow:post-result",
-      onResult as EventListener,
-    );
-
-    return () =>
-      window.removeEventListener(
-        "groupflow:post-result",
-        onResult as EventListener,
-      );
+    window.addEventListener("groupflow:post-result", onResult as EventListener);
+    return () => window.removeEventListener("groupflow:post-result", onResult as EventListener);
   }, [rows, supabase]);
 
   function resetScheduleForm() {
@@ -303,10 +277,9 @@ export default function DailyQueue() {
     const weekLater = new Date();
     weekLater.setDate(weekLater.getDate() + 7);
 
+    setIdentityId("");
     setGroupId("");
     setContentId("");
-    setPostAs("profile");
-    setPageIdentity("");
     setWhen("");
     setScheduleMode("single");
     setStartDate(toDateInputValue(now));
@@ -315,16 +288,18 @@ export default function DailyQueue() {
     setTimesByDay({ [now.getDay()]: ["09:00"] });
   }
 
+  function selectIdentity(value: string) {
+    setIdentityId(value);
+    setGroupId("");
+  }
+
+  const selectedIdentity = identities.find((item) => item.id === identityId) ?? null;
+  const eligibleGroups = identityId
+    ? groups.filter((group) => (group.group_identity_access ?? []).some((access) => access.identity_id === identityId))
+    : [];
+
   function selectGroup(value: string) {
     setGroupId(value);
-    const group = groups.find((item) => item.id === value);
-    if (group?.posting_identity) {
-      setPostAs("page");
-      setPageIdentity(group.posting_identity);
-    } else {
-      setPostAs("profile");
-      setPageIdentity("");
-    }
   }
 
   function toggleDay(day: number) {
@@ -375,14 +350,20 @@ export default function DailyQueue() {
   }
 
   async function add() {
+    if (!identityId || !selectedIdentity) {
+      alert("กรุณาเลือก Facebook Identity ก่อนค่ะ");
+      return;
+    }
     if (!groupId || !contentId) {
       alert("เลือกกลุ่มและคอนเทนต์ให้ครบค่ะ");
       return;
     }
-    if (postAs === "page" && !pageIdentity.trim()) {
-      alert("กรุณาระบุชื่อ Facebook Page ที่ต้องการใช้โพสต์ค่ะ");
+    if (!eligibleGroups.some((group) => group.id === groupId)) {
+      alert("Group นี้ไม่ได้ผูกกับ Facebook Identity ที่เลือกค่ะ");
       return;
     }
+    const postAs: "profile" | "page" = selectedIdentity.identity_type;
+    const postingIdentity = postAs === "page" ? selectedIdentity.name : null;
 
     setBusy(true);
 
@@ -404,8 +385,9 @@ export default function DailyQueue() {
           content_id: contentId,
           scheduled_at: scheduledDate.toISOString(),
           status: "pending",
+          identity_id: identityId,
           post_as: postAs,
-          posting_identity: postAs === "page" ? pageIdentity.trim() : null,
+          posting_identity: postingIdentity,
         });
 
         if (error) throw error;
@@ -444,6 +426,7 @@ export default function DailyQueue() {
           content_id: string;
           scheduled_at: string;
           status: "pending";
+          identity_id: string;
           post_as: "profile" | "page";
           posting_identity: string | null;
         }> = [];
@@ -461,8 +444,9 @@ export default function DailyQueue() {
                   content_id: contentId,
                   scheduled_at: scheduledDate.toISOString(),
                   status: "pending",
+                  identity_id: identityId,
                   post_as: postAs,
-                  posting_identity: postAs === "page" ? pageIdentity.trim() : null,
+                  posting_identity: postingIdentity,
                 });
               }
             }
@@ -648,9 +632,11 @@ export default function DailyQueue() {
       return;
     }
 
+    const { data: { user } } = await supabase.auth.getUser();
     const { error: logError } = await supabase
       .from("posting_logs")
       .insert({
+        user_id: user?.id,
         queue_id: assistant.id,
         group_id: assistant.groups?.id || null,
         content_id: assistant.content_items?.id || null,
@@ -672,6 +658,35 @@ export default function DailyQueue() {
 
     setAssistant(null);
     setPostUrl("");
+    await load();
+  }
+
+  async function postNow(row: QueueRow) {
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("queue_items").update({ scheduled_at: now, status: "pending", last_error: null, updated_at: now }).eq("id", row.id);
+    if (error) alert(error.message); else await load();
+  }
+
+  async function reschedule(row: QueueRow) {
+    const suggested = new Date(Date.now() + 30 * 60 * 1000);
+    const local = new Date(suggested.getTime() - suggested.getTimezoneOffset() * 60000).toISOString().slice(0,16);
+    const value = window.prompt("ใส่วันและเวลาใหม่ (YYYY-MM-DDTHH:mm)", local);
+    if (!value) return;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime()) || date <= new Date()) { alert("กรุณาเลือกเวลาในอนาคตค่ะ"); return; }
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("queue_items").update({ scheduled_at: date.toISOString(), status: "pending", last_error: null, updated_at: now }).eq("id", row.id);
+    if (error) alert(error.message); else await load();
+  }
+
+  async function cancelOverdue(row: QueueRow) {
+    if (!confirm("ยกเลิกคิวนี้หรือไม่? รายการจะออกจาก Daily Queue และเก็บสถานะเป็น skipped")) return;
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("queue_items").update({ status: "skipped", posting_finished_at: now, last_error: "ยกเลิกจาก Daily Queue", updated_at: now }).eq("id", row.id);
+    if (error) { alert(error.message); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error: logError } = await supabase.from("posting_logs").insert({ user_id: user?.id, queue_id: row.id, group_id: row.groups?.id || null, content_id: row.content_items?.id || null, result: "skipped", notes: "ยกเลิกจาก Daily Queue", posted_at: now });
+    if (logError) alert(logError.message);
     await load();
   }
 
@@ -729,7 +744,16 @@ export default function DailyQueue() {
           {overdueRows.length > 0 && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
               <p className="font-bold text-amber-900">คิวตกค้าง • ต้องตรวจสอบ ({overdueRows.length})</p>
-              <p className="text-sm text-amber-700">คิวเหล่านี้เลยเวลาแล้วแต่ยังเป็น pending จึงแยกออกจาก Daily Queue หลัก</p>
+              <p className="mb-3 text-sm text-amber-700">รายการเหล่านี้เลยเวลาแล้วแต่ยังเป็น pending จึงไม่ปนกับ Daily Queue หลัก</p>
+              <div className="space-y-2">{overdueRows.map((row) => {
+                const lateMinutes = Math.max(1, Math.floor((Date.now() - new Date(row.scheduled_at).getTime()) / 60000));
+                return <div key={row.id} className="rounded-xl border border-amber-200 bg-white p-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div><p className="font-bold text-slate-900">{row.content_items?.title || "คอนเทนต์ถูกลบ"}</p><p className="text-sm text-slate-600">{row.groups?.name || "กลุ่มถูกลบ"} · {row.post_as === "page" ? `Page: ${row.posting_identity || "-"}` : "Profile"}</p><p className="text-xs text-amber-700">นัด {new Date(row.scheduled_at).toLocaleString("th-TH")} · เลยเวลาประมาณ {lateMinutes} นาที</p></div>
+                    <div className="flex flex-wrap gap-2"><button className="btn-primary" onClick={() => void postNow(row)}><Send size={15}/>โพสต์ตอนนี้</button><button className="btn-ghost" onClick={() => void reschedule(row)}><Clock3 size={15}/>เลื่อนเวลา</button><button className="btn-danger" onClick={() => void cancelOverdue(row)}><X size={15}/>ยกเลิก</button></div>
+                  </div>
+                </div>
+              })}</div>
             </div>
           )}
           {upcomingRows.map((row, index) => {
@@ -766,10 +790,13 @@ export default function DailyQueue() {
                   <p className="font-bold">
                     {row.content_items?.title || "คอนเทนต์ถูกลบ"}
                   </p>
-                  <p className="mt-1 text-sm text-white/50">
+                  <p className="mt-1 text-sm text-slate-500">
                     {row.groups?.name || "กลุ่มถูกลบ"}
                   </p>
-                  <p className="mt-1 text-xs text-cyan-300">
+                  <p className="mt-1 text-xs font-semibold text-indigo-600">
+                    {row.post_as === "page" ? `Page · ${row.posting_identity || "ไม่ระบุชื่อ"}` : "Facebook Profile"}
+                  </p>
+                  <p className="mt-1 text-xs text-cyan-600">
                     {new Date(row.scheduled_at).toLocaleString("th-TH")}
                   </p>
                 </div>
@@ -853,51 +880,32 @@ export default function DailyQueue() {
 
             <div className="mt-5 grid gap-4">
               <label>
-                Facebook Group
-                <select
-                  className="input mt-1"
-                  value={groupId}
-                  onChange={(event) => selectGroup(event.target.value)}
-                >
-                  <option value="">เลือกกลุ่ม</option>
-                  {groups.map((group) => (
-                    <option key={group.id} value={group.id}>
-                      {group.name}
+                1. Post as / Facebook Identity
+                <select className="input mt-1" value={identityId} onChange={(event) => selectIdentity(event.target.value)}>
+                  <option value="">เลือก Profile หรือ Page ก่อน</option>
+                  {identities.map((identity) => (
+                    <option key={identity.id} value={identity.id}>
+                      {identity.identity_type === "profile" ? "Profile" : "Page"} · {identity.name}
                     </option>
                   ))}
                 </select>
               </label>
 
-              <div>
-                <p className="text-sm font-medium">Post as</p>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    className={postAs === "profile" ? "btn-primary justify-center" : "btn-ghost justify-center"}
-                    onClick={() => { setPostAs("profile"); setPageIdentity(""); }}
-                  >
-                    Facebook Profile
-                  </button>
-                  <button
-                    type="button"
-                    className={postAs === "page" ? "btn-primary justify-center" : "btn-ghost justify-center"}
-                    onClick={() => setPostAs("page")}
-                  >
-                    Facebook Page
-                  </button>
-                </div>
-                {postAs === "page" && (
-                  <label className="mt-3 block text-sm text-slate-700">
-                    ชื่อ Facebook Page
-                    <input
-                      className="input mt-1"
-                      value={pageIdentity}
-                      onChange={(event) => setPageIdentity(event.target.value)}
-                      placeholder="เช่น AMS Careers"
-                    />
-                  </label>
-                )}
-              </div>
+              <label>
+                2. Facebook Group
+                <select
+                  className="input mt-1"
+                  value={groupId}
+                  disabled={!identityId}
+                  onChange={(event) => selectGroup(event.target.value)}
+                >
+                  <option value="">{identityId ? "เลือกกลุ่มที่ Identity นี้เข้าถึงได้" : "เลือก Identity ก่อน"}</option>
+                  {eligibleGroups.map((group) => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </select>
+                {identityId && eligibleGroups.length === 0 && <span className="mt-1 block text-xs text-amber-600">Identity นี้ยังไม่ได้ผูกกับ Group ใด กรุณาไปที่หน้า Groups ก่อน</span>}
+              </label>
 
               <label>
                 คอนเทนต์

@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
   const { data: candidates, error: selectError } = await supabase
     .from("queue_items")
     .select(
-      "id,scheduled_at,status,attempt_count,post_as,posting_identity,groups(*),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
+      "id,scheduled_at,status,attempt_count,post_as,posting_identity,identity_id,groups(*),content_items(id,title,body,hashtags,image_url,content_images(image_url,sort_order))",
     )
     .eq("status", "pending")
     .lte("scheduled_at", now)
@@ -186,6 +186,21 @@ export async function POST(request: NextRequest) {
       .eq("id", row.id);
 
     return NextResponse.json({ error: reason }, { status: 422 });
+  }
+
+  if (row.identity_id) {
+    const { data: access, error: accessError } = await supabase
+      .from("group_identity_access")
+      .select("id")
+      .eq("group_id", group.id)
+      .eq("identity_id", row.identity_id)
+      .maybeSingle();
+
+    if (accessError || !access) {
+      const reason = accessError?.message || "Facebook Identity นี้ไม่มีสิทธิ์เข้าถึง Group ที่เลือก";
+      await supabase.from("queue_items").update({ status: "failed", posting_finished_at: now, updated_at: now, last_error: reason }).eq("id", row.id);
+      return NextResponse.json({ error: reason }, { status: 422 });
+    }
   }
 
   const galleryUrls = Array.isArray(content.content_images)
