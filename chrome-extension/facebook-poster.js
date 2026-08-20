@@ -162,14 +162,98 @@
     return dialog;
   }
 
+  function editorDescriptor(el) {
+    if (!el) return "";
+    return normalizeIdentity([
+      el.getAttribute?.("aria-label"),
+      el.getAttribute?.("aria-placeholder"),
+      el.getAttribute?.("data-placeholder"),
+      el.getAttribute?.("placeholder"),
+      el.getAttribute?.("role"),
+      el.getAttribute?.("data-lexical-editor"),
+      el.innerText,
+      el.textContent
+    ].filter(Boolean).join(" "));
+  }
+
   function findEditor() {
     const dialog = getCreatePostDialog();
     if (!dialog) return null;
-    const editors = [...dialog.querySelectorAll('[contenteditable="true"][role="textbox"], [contenteditable="true"]')].filter(visible);
-    return editors.find((el) => {
-      const aria = (el.getAttribute("aria-label") || "").toLowerCase();
-      return aria.includes("สร้างโพสต์") || aria.includes("create a public post") || aria.includes("เขียน") || aria.includes("post");
-    }) || editors[0] || null;
+
+    // Facebook currently uses a Lexical contenteditable editor. Depending on
+    // language/account rollout the visible placeholder can be rendered either
+    // as an aria attribute or as a sibling text node such as
+    // “สร้างโพสต์สาธารณะ...”. Score all visible editable candidates instead of
+    // relying on one exact selector.
+    const selectors = [
+      '[contenteditable="true"][role="textbox"]',
+      '[role="textbox"][contenteditable="true"]',
+      '[data-lexical-editor="true"]',
+      '[contenteditable="true"]',
+      '[role="textbox"]'
+    ];
+    const candidates = [...new Set(selectors.flatMap((selector) => [...dialog.querySelectorAll(selector)]))]
+      .filter((el) => visible(el) && !el.closest?.('[aria-hidden="true"]'));
+
+    const keywords = [
+      "สร้างโพสต์สาธารณะ", "สร้างโพสต์", "เขียนอะไร", "เขียนโพสต์",
+      "create a public post", "create post", "write something", "what's on your mind",
+      "whats on your mind"
+    ];
+
+    const scored = candidates.map((el) => {
+      const desc = editorDescriptor(el);
+      const rect = el.getBoundingClientRect?.();
+      let score = 0;
+      if (el.getAttribute?.("contenteditable") === "true") score += 6;
+      if (el.getAttribute?.("role") === "textbox") score += 5;
+      if (el.getAttribute?.("data-lexical-editor") === "true") score += 8;
+      if (keywords.some((keyword) => desc.includes(keyword))) score += 15;
+      if (rect && rect.width > 250) score += 3;
+      if (rect && rect.height > 30) score += 2;
+      return { el, score };
+    }).sort((a, b) => b.score - a.score);
+
+    if (scored[0]?.score >= 8) return scored[0].el;
+
+    // Fallback for the exact UI shown in Thai Facebook: the placeholder may
+    // live outside the editable node. Find that visible label and walk to the
+    // closest editor / nearby editor inside the same composer section.
+    const textNodes = [...dialog.querySelectorAll('div, span, p')].filter((el) => {
+      if (!visible(el)) return false;
+      const text = normalizeIdentity(el.textContent || "");
+      return text === "สร้างโพสต์สาธารณะ..." || text.includes("สร้างโพสต์สาธารณะ") ||
+        text === "create a public post..." || text.includes("create a public post");
+    });
+    for (const node of textNodes) {
+      const direct = node.closest?.('[contenteditable="true"], [role="textbox"], [data-lexical-editor="true"]');
+      if (direct && visible(direct)) return direct;
+      let parent = node.parentElement;
+      for (let depth = 0; parent && depth < 6; depth += 1, parent = parent.parentElement) {
+        const nearby = parent.querySelector?.('[contenteditable="true"], [role="textbox"], [data-lexical-editor="true"]');
+        if (nearby && visible(nearby)) return nearby;
+      }
+    }
+
+    return candidates[0] || null;
+  }
+
+  function editorDiagnostics() {
+    const dialog = getCreatePostDialog();
+    if (!dialog) return "ไม่พบ Create Post dialog";
+    const candidates = [...dialog.querySelectorAll('[contenteditable], [role="textbox"], [data-lexical-editor], [aria-placeholder]')]
+      .filter(visible)
+      .slice(0, 8)
+      .map((el) => ({
+        tag: el.tagName,
+        role: el.getAttribute("role"),
+        editable: el.getAttribute("contenteditable"),
+        lexical: el.getAttribute("data-lexical-editor"),
+        aria: el.getAttribute("aria-label"),
+        placeholder: el.getAttribute("aria-placeholder") || el.getAttribute("data-placeholder"),
+        text: (el.innerText || el.textContent || "").trim().slice(0, 80)
+      }));
+    return `พบ candidate ${candidates.length}: ${JSON.stringify(candidates)}`;
   }
 
   function formatCaption(rawText) {
@@ -497,7 +581,7 @@
     panel.id = "groupflow-agent-panel";
     panel.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483647;width:360px;background:#10131a;color:white;border:1px solid #3b82f6;border-radius:16px;padding:16px;font-family:Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.45)";
     panel.innerHTML = `
-      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V13.4</div>
+      <div style="font-weight:700;font-size:17px">GROUP FLOW Posting Agent V13.5</div>
       <div style="margin-top:6px;font-size:12px;color:#93c5fd">${job.groupName || "Facebook Group"}</div>
       <div id="gf-status" style="margin-top:10px;font-size:13px;line-height:1.5;color:#e2e8f0">กำลังเตรียมโพสต์…</div>
       <div style="display:flex;gap:8px;margin-top:14px">
@@ -527,8 +611,11 @@
         dialog = getCreatePostDialog() || dialog;
       }
 
-      const editor = await waitFor(findEditor, 12000);
-      if (!editor) throw new Error("ไม่พบช่องเขียนข้อความในหน้าต่างสร้างโพสต์");
+      const editor = await waitFor(findEditor, 20000, 250);
+      if (!editor) {
+        console.warn("[GROUP FLOW V13.5] editor diagnostics", editorDiagnostics());
+        throw new Error("ไม่พบช่องพิมพ์ในหน้าต่างสร้างโพสต์ — Facebook เปิด Composer แล้ว แต่โครงสร้างช่องพิมพ์ไม่ตรงกับที่ Extension ตรวจจับ");
+      }
 
       setStatus("กำลังใส่ข้อความ…");
       const finalCaption = await replaceEditorText(editor, job.caption || "");
@@ -550,7 +637,7 @@
         await sleep(1000);
         postButton.click();
         await sleep(4000);
-        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V13.4" });
+        chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "โพสต์อัตโนมัติจาก GROUP FLOW Posting Agent V13.5" });
         setStatus("ส่งคำสั่งโพสต์แล้ว และบันทึกผลกลับ GROUP FLOW แล้ว");
       } else {
         setStatus("เตรียมโพสต์เรียบร้อย กรุณาตรวจสอบแล้วกดปุ่มด้านล่าง");
@@ -561,7 +648,7 @@
           latestButton.click();
           setStatus("กำลังโพสต์…");
           await sleep(4000);
-          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V13.4" });
+          chrome.runtime.sendMessage({ type: "GROUPFLOW_FINISH_JOB", result: "posted", postUrl: location.href, notes: "ผู้ใช้ตรวจสอบและกดโพสต์ผ่าน Posting Agent V13.5" });
         };
       }
     } catch (error) {
