@@ -179,7 +179,8 @@ export default function DailyQueue() {
   const [open, setOpen] = useState(false);
   const [assistant, setAssistant] = useState<QueueRow | null>(null);
   const [identityId, setIdentityId] = useState("");
-  const [groupId, setGroupId] = useState("");
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [intervalMinutes, setIntervalMinutes] = useState(5);
   const [contentId, setContentId] = useState("");
   const today = useMemo(() => new Date(), []);
   const nextWeek = useMemo(() => {
@@ -278,7 +279,7 @@ export default function DailyQueue() {
     weekLater.setDate(weekLater.getDate() + 7);
 
     setIdentityId("");
-    setGroupId("");
+    setSelectedGroupIds([]);
     setContentId("");
     setWhen("");
     setScheduleMode("single");
@@ -290,7 +291,7 @@ export default function DailyQueue() {
 
   function selectIdentity(value: string) {
     setIdentityId(value);
-    setGroupId("");
+    setSelectedGroupIds([]);
   }
 
   const selectedIdentity = identities.find((item) => item.id === identityId) ?? null;
@@ -298,8 +299,18 @@ export default function DailyQueue() {
     ? groups.filter((group) => (group.group_identity_access ?? []).some((access) => access.identity_id === identityId))
     : [];
 
-  function selectGroup(value: string) {
-    setGroupId(value);
+  function toggleGroup(groupId: string) {
+    setSelectedGroupIds((current) =>
+      current.includes(groupId) ? current.filter((id) => id !== groupId) : [...current, groupId],
+    );
+  }
+
+  function selectAllGroups() {
+    setSelectedGroupIds(eligibleGroups.map((group) => group.id));
+  }
+
+  function clearGroups() {
+    setSelectedGroupIds([]);
   }
 
   function toggleDay(day: number) {
@@ -349,127 +360,92 @@ export default function DailyQueue() {
     });
   }
 
+  function buildBaseScheduleDates(): Date[] {
+    if (scheduleMode === "single") {
+      if (!when) return [];
+      const date = new Date(when);
+      return Number.isNaN(date.getTime()) || date < new Date() ? [] : [date];
+    }
+
+    const start = dateFromLocalInputs(startDate, "00:00");
+    const end = dateFromLocalInputs(endDate, "23:59");
+    if (!start || !end || end < start) return [];
+
+    const dates: Date[] = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      if (selectedDays.includes(cursor.getDay())) {
+        const dateValue = toDateInputValue(cursor);
+        const times = Array.from(new Set((timesByDay[cursor.getDay()] ?? []).filter(Boolean))).sort();
+        for (const time of times) {
+          const date = dateFromLocalInputs(dateValue, time);
+          if (date && date >= new Date()) dates.push(date);
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return dates;
+  }
+
+  const queuePreview = useMemo(() => {
+    const baseDates = buildBaseScheduleDates();
+    const interval = Math.max(0, Number(intervalMinutes) || 0);
+    return baseDates.flatMap((baseDate) =>
+      selectedGroupIds.map((id, groupIndex) => {
+        const group = eligibleGroups.find((item) => item.id === id);
+        const scheduledAt = new Date(baseDate.getTime() + groupIndex * interval * 60000);
+        return { groupId: id, groupName: group?.name || "ไม่พบ Group", scheduledAt };
+      }),
+    );
+  }, [scheduleMode, when, startDate, endDate, selectedDays, timesByDay, selectedGroupIds, eligibleGroups, intervalMinutes]);
+
   async function add() {
     if (!identityId || !selectedIdentity) {
       alert("กรุณาเลือก Facebook Identity ก่อนค่ะ");
       return;
     }
-    if (!groupId || !contentId) {
-      alert("เลือกกลุ่มและคอนเทนต์ให้ครบค่ะ");
+    if (selectedGroupIds.length === 0 || !contentId) {
+      alert("เลือกอย่างน้อย 1 กลุ่มและเลือกคอนเทนต์ให้ครบค่ะ");
       return;
     }
-    if (!eligibleGroups.some((group) => group.id === groupId)) {
-      alert("Group นี้ไม่ได้ผูกกับ Facebook Identity ที่เลือกค่ะ");
+    if (selectedGroupIds.some((id) => !eligibleGroups.some((group) => group.id === id))) {
+      alert("มี Group ที่ไม่ได้ผูกกับ Facebook Identity ที่เลือกค่ะ");
       return;
     }
+    if (intervalMinutes < 0 || intervalMinutes > 1440) {
+      alert("ช่วงห่างต้องอยู่ระหว่าง 0–1,440 นาทีค่ะ");
+      return;
+    }
+    if (scheduleMode === "multiple" && selectedDays.length === 0) {
+      alert("เลือกอย่างน้อย 1 วันค่ะ");
+      return;
+    }
+    if (queuePreview.length === 0) {
+      alert("ไม่พบวันและเวลาที่ยังไม่ผ่านไป กรุณาตรวจสอบ Schedule ค่ะ");
+      return;
+    }
+    if (queuePreview.length > 300) {
+      alert(`รายการที่กำลังสร้างมี ${queuePreview.length} คิว กรุณาลดจำนวน Group/วัน/เวลาให้ไม่เกิน 300 คิวค่ะ`);
+      return;
+    }
+
     const postAs: "profile" | "page" = selectedIdentity.identity_type;
     const postingIdentity = postAs === "page" ? selectedIdentity.name : null;
+    const queueRows = queuePreview.map((item) => ({
+      group_id: item.groupId,
+      content_id: contentId,
+      scheduled_at: item.scheduledAt.toISOString(),
+      status: "pending" as const,
+      identity_id: identityId,
+      post_as: postAs,
+      posting_identity: postingIdentity,
+    }));
 
     setBusy(true);
-
     try {
-      if (scheduleMode === "single") {
-        if (!when) {
-          alert("เลือกวันและเวลาโพสต์ค่ะ");
-          return;
-        }
-
-        const scheduledDate = new Date(when);
-        if (Number.isNaN(scheduledDate.getTime())) {
-          alert("วันและเวลาไม่ถูกต้องค่ะ");
-          return;
-        }
-
-        const { error } = await supabase.from("queue_items").insert({
-          group_id: groupId,
-          content_id: contentId,
-          scheduled_at: scheduledDate.toISOString(),
-          status: "pending",
-          identity_id: identityId,
-          post_as: postAs,
-          posting_identity: postingIdentity,
-        });
-
-        if (error) throw error;
-        alert("เพิ่มคิวโพสต์เรียบร้อยแล้วค่ะ");
-      } else {
-        if (!startDate || !endDate) {
-          alert("เลือกวันที่เริ่มต้นและวันที่สิ้นสุดค่ะ");
-          return;
-        }
-
-        if (selectedDays.length === 0) {
-          alert("เลือกอย่างน้อย 1 วันค่ะ");
-          return;
-        }
-
-        const normalizedTimesByDay = Object.fromEntries(
-          selectedDays.map((day) => [
-            day,
-            Array.from(new Set<string>((timesByDay[day] ?? []).filter(Boolean))).sort(),
-          ]),
-        ) as Record<number, string[]>;
-        if (selectedDays.some((day) => normalizedTimesByDay[day].length === 0)) {
-          alert("ทุกวันที่เลือกต้องมีอย่างน้อย 1 เวลาโพสต์ค่ะ");
-          return;
-        }
-
-        const start = dateFromLocalInputs(startDate, "00:00");
-        const end = dateFromLocalInputs(endDate, "23:59");
-        if (!start || !end || end < start) {
-          alert("ช่วงวันที่ไม่ถูกต้องค่ะ");
-          return;
-        }
-
-        const queueRows: Array<{
-          group_id: string;
-          content_id: string;
-          scheduled_at: string;
-          status: "pending";
-          identity_id: string;
-          post_as: "profile" | "page";
-          posting_identity: string | null;
-        }> = [];
-
-        const cursor = new Date(start);
-        while (cursor <= end) {
-          if (selectedDays.includes(cursor.getDay())) {
-            const dateValue = toDateInputValue(cursor);
-            const validTimes = normalizedTimesByDay[cursor.getDay()] ?? [];
-            for (const time of validTimes) {
-              const scheduledDate = dateFromLocalInputs(dateValue, time);
-              if (scheduledDate && scheduledDate >= new Date()) {
-                queueRows.push({
-                  group_id: groupId,
-                  content_id: contentId,
-                  scheduled_at: scheduledDate.toISOString(),
-                  status: "pending",
-                  identity_id: identityId,
-                  post_as: postAs,
-                  posting_identity: postingIdentity,
-                });
-              }
-            }
-          }
-          cursor.setDate(cursor.getDate() + 1);
-        }
-
-        if (queueRows.length === 0) {
-          alert("ไม่พบวันและเวลาที่ยังไม่ผ่านไปในช่วงที่เลือกค่ะ");
-          return;
-        }
-
-        if (queueRows.length > 300) {
-          alert(`รายการที่กำลังสร้างมี ${queueRows.length} คิว กรุณาลดช่วงวันที่หรือจำนวนเวลาลงให้ไม่เกิน 300 คิวค่ะ`);
-          return;
-        }
-
-        const { error } = await supabase.from("queue_items").insert(queueRows);
-        if (error) throw error;
-
-        alert(`สร้างคิวโพสต์เรียบร้อย ${queueRows.length} คิวค่ะ`);
-      }
-
+      const { error } = await supabase.from("queue_items").insert(queueRows);
+      if (error) throw error;
+      alert(`สร้างคิวเรียบร้อย ${queueRows.length} คิว สำหรับ ${selectedGroupIds.length} กลุ่มค่ะ`);
       setOpen(false);
       resetScheduleForm();
       await load();
@@ -891,21 +867,24 @@ export default function DailyQueue() {
                 </select>
               </label>
 
-              <label>
-                2. Facebook Group
-                <select
-                  className="input mt-1"
-                  value={groupId}
-                  disabled={!identityId}
-                  onChange={(event) => selectGroup(event.target.value)}
-                >
-                  <option value="">{identityId ? "เลือกกลุ่มที่ Identity นี้เข้าถึงได้" : "เลือก Identity ก่อน"}</option>
-                  {eligibleGroups.map((group) => (
-                    <option key={group.id} value={group.id}>{group.name}</option>
-                  ))}
-                </select>
-                {identityId && eligibleGroups.length === 0 && <span className="mt-1 block text-xs text-amber-600">Identity นี้ยังไม่ได้ผูกกับ Group ใด กรุณาไปที่หน้า Groups ก่อน</span>}
-              </label>
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">2. Facebook Groups <span className="text-indigo-600">({selectedGroupIds.length} กลุ่ม)</span></p>
+                  <div className="flex gap-2">
+                    <button type="button" className="btn-ghost" disabled={!identityId || eligibleGroups.length === 0} onClick={selectAllGroups}>เลือกทั้งหมด</button>
+                    <button type="button" className="btn-ghost" disabled={selectedGroupIds.length === 0} onClick={clearGroups}>ล้าง</button>
+                  </div>
+                </div>
+                <div className="mt-2 max-h-52 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2">
+                  {!identityId ? <p className="p-3 text-sm text-slate-400">เลือก Identity ก่อน</p> : eligibleGroups.length === 0 ? <p className="p-3 text-sm text-amber-600">Identity นี้ยังไม่ได้ผูกกับ Group ใด กรุณาไปที่หน้า Groups ก่อน</p> : eligibleGroups.map((group) => {
+                    const checked = selectedGroupIds.includes(group.id);
+                    return <label key={group.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 ${checked ? "border-indigo-300 bg-indigo-50" : "border-slate-100"}`}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleGroup(group.id)} />
+                      <span className="text-sm font-medium text-slate-700">{group.name}</span>
+                    </label>;
+                  })}
+                </div>
+              </div>
 
               <label>
                 คอนเทนต์
@@ -1042,6 +1021,19 @@ export default function DailyQueue() {
                   </p>
                 </div>
               )}
+
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><p className="text-sm font-bold text-slate-800">ช่วงห่างระหว่างแต่ละ Group</p><p className="text-xs text-slate-500">ระบบจะไม่ยิงทุกกลุ่มพร้อมกัน แต่กระจายเวลาตามลำดับที่เลือก</p></div>
+                  <div className="flex flex-wrap gap-2">{[0,2,5,10,15,30].map((minute) => <button key={minute} type="button" className={intervalMinutes === minute ? "btn-primary" : "btn-ghost"} onClick={() => setIntervalMinutes(minute)}>{minute === 0 ? "พร้อมกัน" : `${minute} นาที`}</button>)}</div>
+                </div>
+                <label className="mt-3 block text-sm">กำหนดเอง (นาที)<input className="input mt-1" type="number" min="0" max="1440" value={intervalMinutes} onChange={(event) => setIntervalMinutes(Math.max(0, Number(event.target.value) || 0))} /></label>
+              </div>
+
+              {selectedGroupIds.length > 0 && queuePreview.length > 0 && <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between"><p className="text-sm font-bold text-slate-800">Queue Preview</p><span className="badge">{queuePreview.length} คิว</span></div>
+                <div className="mt-3 max-h-48 space-y-2 overflow-y-auto">{queuePreview.slice(0,100).map((item,index) => <div key={`${item.groupId}-${item.scheduledAt.toISOString()}-${index}`} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="min-w-0 truncate text-slate-700">{item.groupName}</span><span className="shrink-0 font-semibold text-indigo-600">{item.scheduledAt.toLocaleString("th-TH")}</span></div>)}{queuePreview.length > 100 && <p className="text-center text-xs text-slate-400">แสดง 100 รายการแรกจาก {queuePreview.length} คิว</p>}</div>
+              </div>}
 
               <button
                 disabled={busy}
